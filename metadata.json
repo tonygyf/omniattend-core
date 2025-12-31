@@ -1,0 +1,5 @@
+{
+  "name": "FaceCheck Admin",
+  "description": "Intelligent administration dashboard for FaceCheck attendance system, featuring D1 data synchronization and Gemini-powered attendance insights.",
+  "requestFramePermissions": []
+}
