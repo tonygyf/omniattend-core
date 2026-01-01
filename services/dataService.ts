@@ -1,9 +1,14 @@
 import { User, AttendanceRecord, AttendanceStatus, DashboardStats } from '../types';
 
 // CONFIGURATION
-// Toggle this to false to use the Real Cloudflare Worker API
-const USE_MOCK = true;
-const API_BASE_URL = "http://localhost:8787"; // Replace with your production Worker URL
+// Set to false to use the real Cloudflare Worker API
+const USE_MOCK = false; 
+
+// When served by the Worker itself, use relative path.
+// If developing locally with 'npm run start' (frontend) and 'wrangler dev' (backend) on different ports, 
+// you might need "http://localhost:8787". 
+// But for production build, an empty string "" allows relative requests like "/api/stats".
+const API_BASE_URL = ""; 
 
 // --- MOCK DATA GENERATION ---
 
@@ -44,82 +49,4 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
     };
   }
 
-  const res = await fetch(`${API_BASE_URL}/api/stats`);
-  if (!res.ok) throw new Error('Failed to fetch stats');
-  return res.json();
-};
-
-export const fetchUsers = async (): Promise<User[]> => {
-  if (USE_MOCK) {
-    await new Promise(resolve => setTimeout(resolve, 600));
-    return generateMockUsers();
-  }
-
-  const res = await fetch(`${API_BASE_URL}/api/users`);
-  if (!res.ok) throw new Error('Failed to fetch users');
-  return res.json();
-};
-
-export const fetchRecentAttendance = async (): Promise<AttendanceRecord[]> => {
-  if (USE_MOCK) {
-    await new Promise(resolve => setTimeout(resolve, 600));
-    return generateMockAttendance();
-  }
-
-  const res = await fetch(`${API_BASE_URL}/api/attendance`);
-  if (!res.ok) throw new Error('Failed to fetch attendance');
-  return res.json();
-};
-
-export const syncDataWithCloudflare = async (): Promise<boolean> => {
-    // This is where you would trigger a sync from D1
-    console.log("Triggering sync with Cloudflare D1...");
-    // If not using mock, this might be a specific 'sync' endpoint or just a refresh
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    return true;
-}
-
-// --- NEW CRUD OPERATIONS ---
-
-export const createUser = async (userData: Partial<User>): Promise<boolean> => {
-  if (USE_MOCK) {
-    console.log("Mock create user:", userData);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return true;
-  }
-
-  const res = await fetch(`${API_BASE_URL}/api/users`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(userData),
-  });
-  return res.ok;
-};
-
-export const updateUser = async (id: string, userData: Partial<User>): Promise<boolean> => {
-  if (USE_MOCK) {
-    console.log(`Mock update user ${id}:`, userData);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return true;
-  }
-
-  const res = await fetch(`${API_BASE_URL}/api/users/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(userData),
-  });
-  return res.ok;
-};
-
-export const deleteUser = async (id: string): Promise<boolean> => {
-  if (USE_MOCK) {
-    console.log(`Mock delete user ${id}`);
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return true;
-  }
-
-  const res = await fetch(`${API_BASE_URL}/api/users/${id}`, {
-    method: 'DELETE',
-  });
-  return res.ok;
-};
+  const res = await fetch(`${API_BASE_URL}/api/stats
