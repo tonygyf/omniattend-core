@@ -9,9 +9,10 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "omniattend-db"
-database_id = "你的 D1 database_id"
+database_id = "4bb2ea29-1dd7-4bd0-8ea9-7f43c27a0b3c"
 
 # 前端静态资源绑定（关键）
 [assets]
 directory = "./dist"
 binding = "ASSETS"
+
