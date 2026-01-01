@@ -49,4 +49,55 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
     };
   }
 
-  const res = await fetch(`${API_BASE_URL}/api/stats
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/stats`);
+    if (!res.ok) throw new Error('Failed to fetch stats');
+    return await res.json();
+  } catch (error) {
+    console.warn("API request failed, falling back to mock data");
+    return {
+        totalUsers: 0,
+        presentToday: 0,
+        lateToday: 0,
+        absentToday: 0,
+        weeklyTrend: []
+    };
+  }
+};
+
+export const fetchUsers = async (): Promise<User[]> => {
+  if (USE_MOCK) {
+    await new Promise(resolve => setTimeout(resolve, 600));
+    return generateMockUsers();
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/users`);
+    if (!res.ok) throw new Error('Failed to fetch users');
+    return await res.json();
+  } catch (error) {
+    console.warn("API request failed, falling back to mock data");
+    return generateMockUsers();
+  }
+};
+
+export const fetchRecentAttendance = async (): Promise<AttendanceRecord[]> => {
+  if (USE_MOCK) {
+    await new Promise(resolve => setTimeout(resolve, 600));
+    return generateMockAttendance();
+  }
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/attendance`);
+    if (!res.ok) throw new Error('Failed to fetch attendance');
+    return await res.json();
+  } catch (error) {
+    console.warn("API request failed, falling back to mock data");
+    return generateMockAttendance();
+  }
+};
+
+export const syncDataWithCloudflare = async (): Promise<void> => {
+  // Simulates sending a sync signal or waiting for data consistency
+  await new Promise(resolve => setTimeout(resolve, 1500));
+};
