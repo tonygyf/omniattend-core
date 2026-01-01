@@ -9,6 +9,7 @@ import {
   Menu,
   X
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 interface SidebarProps {
   currentPage: string;
@@ -18,6 +19,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setIsOpen }) => {
+  const { logout } = useAuth();
   
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -83,11 +85,15 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
         </nav>
 
         <div className="p-4 border-t border-slate-700 space-y-2">
-          <button className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors">
+          <button 
+            onClick={() => handleNav('settings')}
+            className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors">
             <Settings size={20} />
             <span className="font-medium">Settings</span>
           </button>
-          <button className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded-xl transition-colors">
+          <button 
+            onClick={() => { logout(); setIsOpen(false); }}
+            className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded-xl transition-colors">
             <LogOut size={20} />
             <span className="font-medium">Sign Out</span>
           </button>

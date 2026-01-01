@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import UsersPage from './pages/Users';
 import AttendancePage from './pages/Attendance';
 import AiInsights from './pages/AiInsights';
+import SettingsPage from './pages/Settings';
 import Login from './pages/Login';
 import Register from './pages/Register';
 
@@ -35,6 +36,7 @@ const AppContent = () => {
       case 'users': return <UsersPage />;
       case 'attendance': return <AttendancePage />;
       case 'insights': return <AiInsights />;
+      case 'settings': return <SettingsPage />;
       default: return <Dashboard />;
     }
   };
