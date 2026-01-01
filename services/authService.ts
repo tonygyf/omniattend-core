@@ -1,7 +1,7 @@
 import { AdminUser, ApiResponse } from '../types';
 
 // CONFIGURATION
-const API_BASE_URL = "http://localhost:8787"; // Replace with production URL
+const API_BASE_URL = "";
 
 interface AuthResponse {
   id: string;
