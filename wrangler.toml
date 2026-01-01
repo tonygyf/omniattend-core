@@ -1,0 +1,12 @@
+name = "omniattend-core"
+main = "worker.ts"
+compatibility_date = "2025-01-01"
+
+# 开发时用 workers.dev 域名
+workers_dev = true
+
+# 如果你已经知道 account_id，可以写上
+# account_id = "你的 Cloudflare Account ID"
+
+# Node.js API 支持（你项目里用得到）
+compatibility_flags = ["nodejs_compat"]
