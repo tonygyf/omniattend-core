@@ -42,7 +42,7 @@ const AppContent = () => {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 text-slate-900 font-sans overflow-hidden">
+    <div className="flex h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans overflow-hidden">
       
       {/* Sidebar Navigation */}
       <Sidebar 
@@ -56,14 +56,14 @@ const AppContent = () => {
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         
         {/* Mobile Header */}
-        <header className="lg:hidden bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between z-10">
-          <div className="flex items-center gap-2 font-bold text-lg text-slate-800">
+        <header className="lg:hidden bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center justify-between z-10">
+          <div className="flex items-center gap-2 font-bold text-lg text-slate-800 dark:text-white">
              <div className="w-6 h-6 bg-blue-500 rounded flex items-center justify-center text-white text-xs">F</div>
              FaceCheck
           </div>
           <button 
             onClick={() => setIsSidebarOpen(true)}
-            className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg"
+            className="p-2 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
           >
             <Menu size={24} />
           </button>

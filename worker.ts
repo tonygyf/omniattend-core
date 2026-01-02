@@ -39,56 +39,95 @@ export default {
       // ===========================
       if (path.startsWith("/api/")) {
 
-        // --- AUTH ROUTES ---
+        // --- SYSTEM ROUTES ---
 
-        // 0. POST /api/auth/register
-        if (path === "/api/auth/register" && method === "POST") {
-          const body = await request.json() as any;
-          if (!body.email || !body.password) {
-             return Response.json({ error: "Missing email or password" }, { status: 400, headers: corsHeaders });
+        // 0. GET /api/health - System Status Check
+        if (path === "/api/health" && method === "GET") {
+          let dbStatus = "unknown";
+          let userCount = 0;
+          try {
+             // Try a lightweight query to check D1 connection
+             const result = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first();
+             userCount = result.count as number;
+             dbStatus = "connected";
+          } catch (e) {
+             dbStatus = "disconnected";
           }
 
-          // Check if exists
-          const existing = await env.DB.prepare("SELECT id FROM admins WHERE email = ?").bind(body.email).first();
-          if (existing) {
-            return Response.json({ error: "User already exists" }, { status: 409, headers: corsHeaders });
-          }
-
-          const id = crypto.randomUUID();
-          const hashedPassword = await hashPassword(body.password);
-
-          await env.DB.prepare("INSERT INTO admins (id, email, password) VALUES (?, ?, ?)")
-            .bind(id, body.email, hashedPassword)
-            .run();
-
-          return Response.json({ success: true, data: { id, email: body.email } }, { status: 201, headers: corsHeaders });
+          return Response.json({
+            status: "ok",
+            timestamp: new Date().toISOString(),
+            environment: "production",
+            database: {
+              status: dbStatus,
+              type: "Cloudflare D1",
+              recordCount: userCount
+            },
+            version: "1.0.0"
+          }, { headers: corsHeaders });
         }
 
-        // 0. POST /api/auth/login
-        if (path === "/api/auth/login" && method === "POST") {
+        // --- AUTH ROUTES ---
+
+        // 0. POST /api/auth/register (Teacher Registration)
+        if (path === "/api/auth/register" && method === "POST") {
           const body = await request.json() as any;
-          if (!body.email || !body.password) {
-             return Response.json({ error: "Missing email or password" }, { status: 400, headers: corsHeaders });
+          if (!body.username || !body.password || !body.name) {
+             return Response.json({ error: "Missing required fields" }, { status: 400, headers: corsHeaders });
           }
 
-          const admin = await env.DB.prepare("SELECT * FROM admins WHERE email = ?").bind(body.email).first();
-          if (!admin) {
+          // Check if username exists
+          const existing = await env.DB.prepare("SELECT id FROM Teacher WHERE username = ?").bind(body.username).first();
+          if (existing) {
+            return Response.json({ error: "Username already exists" }, { status: 409, headers: corsHeaders });
+          }
+
+          const hashedPassword = await hashPassword(body.password);
+
+          // Insert Teacher
+          const res = await env.DB.prepare("INSERT INTO Teacher (name, username, password) VALUES (?, ?, ?)")
+            .bind(body.name, body.username, hashedPassword)
+            .run();
+
+          return Response.json({ 
+            success: true, 
+            data: { 
+                id: res.meta.last_row_id, 
+                username: body.username,
+                name: body.name 
+            } 
+          }, { status: 201, headers: corsHeaders });
+        }
+
+        // 0. POST /api/auth/login (Teacher Login)
+        if (path === "/api/auth/login" && method === "POST") {
+          const body = await request.json() as any;
+          if (!body.username || !body.password) { // Android uses 'username'
+             // Fallback for web calling with 'email'
+             const userKey = body.username || body.email;
+             if(!userKey) return Response.json({ error: "Missing username/email or password" }, { status: 400, headers: corsHeaders });
+             body.username = userKey;
+          }
+
+          const teacher = await env.DB.prepare("SELECT * FROM Teacher WHERE username = ?").bind(body.username).first();
+          if (!teacher) {
              return Response.json({ error: "Invalid credentials" }, { status: 401, headers: corsHeaders });
           }
 
           const hashedPassword = await hashPassword(body.password);
-          if (hashedPassword !== admin.password) {
+          if (hashedPassword !== teacher.password) {
              return Response.json({ error: "Invalid credentials" }, { status: 401, headers: corsHeaders });
           }
 
-          // In a real app, sign a JWT here. For simple D1/Worker demo, we return a mock token.
+          // Return Teacher Info + Mock Token
           const token = crypto.randomUUID(); 
           
           return Response.json({ 
             success: true, 
             data: { 
-              id: admin.id, 
-              email: admin.email,
+              id: teacher.id, 
+              username: teacher.username,
+              name: teacher.name,
               token: token 
             } 
           }, { headers: corsHeaders });
@@ -96,131 +135,99 @@ export default {
 
         // --- DATA ROUTES ---
 
-        // 1. GET /api/stats - Dashboard Analytics
-        if (path === "/api/stats" && method === "GET") {
-          const totalUsers = await env.DB.prepare("SELECT COUNT(*) as count FROM users WHERE status = 'active'").first("count");
+        // --- STUDENTS MODULE ---
+
+        // GET /api/students?classId=<number>
+        if (path === "/api/students" && method === "GET") {
+          const classId = url.searchParams.get("classId");
+          if (!classId) return Response.json({ error: "classId required" }, { status: 400, headers: corsHeaders });
           
-          const startOfDay = new Date();
-          startOfDay.setHours(0,0,0,0);
-          const isoDate = startOfDay.toISOString();
-
-          const attendanceStats = await env.DB.prepare(`
-            SELECT 
-              SUM(CASE WHEN status = 'PRESENT' THEN 1 ELSE 0 END) as present,
-              SUM(CASE WHEN status = 'LATE' THEN 1 ELSE 0 END) as late,
-              SUM(CASE WHEN status = 'ABSENT' THEN 1 ELSE 0 END) as absent
-            FROM attendance 
-            WHERE timestamp >= ?
-          `).bind(isoDate).first();
-
-          // Mock Trend (complex SQL)
-          const weeklyTrend = [
-              { day: 'Mon', count: 0 }, { day: 'Tue', count: 0 }, { day: 'Wed', count: 0 },
-              { day: 'Thu', count: 0 }, { day: 'Fri', count: 0 }, { day: 'Sat', count: 0 }, { day: 'Sun', count: 0 }
-          ];
-
-          return Response.json({
-            totalUsers: totalUsers || 0,
-            presentToday: attendanceStats?.present || 0,
-            lateToday: attendanceStats?.late || 0,
-            absentToday: attendanceStats?.absent || 0,
-            weeklyTrend
-          }, { headers: corsHeaders });
+          const { results } = await env.DB.prepare("SELECT * FROM Student WHERE classId = ?").bind(classId).all();
+          return Response.json({ data: results }, { headers: corsHeaders });
         }
 
-        // 2. GET /api/users - List Users
-        if (path === "/api/users" && method === "GET") {
-          const { results } = await env.DB.prepare("SELECT * FROM users ORDER BY name ASC").all();
-          return Response.json(results, { headers: corsHeaders });
-        }
-
-        // 3. POST /api/users - Create User
-        if (path === "/api/users" && method === "POST") {
+        // POST /api/students
+        if (path === "/api/students" && method === "POST") {
           const body = await request.json() as any;
-          const id = crypto.randomUUID();
-          
-          await env.DB.prepare(`
-            INSERT INTO users (id, name, department, role, status, avatarUrl, faceEmbeddings)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).bind(
-            id, 
-            body.name, 
-            body.department, 
-            body.role, 
-            body.status || 'active', 
-            body.avatarUrl,
-            body.faceEmbeddings || null
-          ).run();
-
-          return Response.json({ success: true, id }, { status: 201, headers: corsHeaders });
-        }
-
-        // 4. PUT /api/users/:id - Update User
-        if (path.startsWith("/api/users/") && method === "PUT") {
-          const id = path.split("/").pop();
-          const body = await request.json() as any;
-
-          await env.DB.prepare(`
-            UPDATE users 
-            SET name = ?, department = ?, role = ?, status = ?, avatarUrl = ?
-            WHERE id = ?
-          `).bind(
-            body.name, 
-            body.department, 
-            body.role, 
-            body.status, 
-            body.avatarUrl,
-            id
-          ).run();
-
-          return Response.json({ success: true }, { headers: corsHeaders });
-        }
-
-        // 5. DELETE /api/users/:id - Delete User
-        if (path.startsWith("/api/users/") && method === "DELETE") {
-          const id = path.split("/").pop();
-          await env.DB.prepare("DELETE FROM users WHERE id = ?").bind(id).run();
-          return Response.json({ success: true }, { headers: corsHeaders });
-        }
-
-        // 6. GET /api/attendance - Fetch Logs
-        if (path === "/api/attendance" && method === "GET") {
-          const { results } = await env.DB.prepare(`
-            SELECT * FROM attendance 
-            ORDER BY timestamp DESC 
-            LIMIT 100
-          `).all();
-          return Response.json(results, { headers: corsHeaders });
-        }
-
-        // 7. POST /api/attendance - Record Attendance (For Android)
-        if (path === "/api/attendance" && method === "POST") {
-          const body = await request.json() as any;
-          const id = crypto.randomUUID();
-          
-          if (!body.userId || !body.status) {
-             return Response.json({ error: "Missing required fields" }, { status: 400, headers: corsHeaders });
+          // Upsert logic: If ID provided, update; else insert
+          // For simplicity in D1, we use INSERT OR REPLACE if ID exists, or standard insert
+          if (body.id) {
+             await env.DB.prepare(`
+               INSERT OR REPLACE INTO Student (id, classId, name, sid, gender, avatarUri)
+               VALUES (?, ?, ?, ?, ?, ?)
+             `).bind(body.id, body.classId, body.name, body.sid, body.gender, body.avatarUri).run();
+          } else {
+             await env.DB.prepare(`
+               INSERT INTO Student (classId, name, sid, gender, avatarUri)
+               VALUES (?, ?, ?, ?, ?)
+             `).bind(body.classId, body.name, body.sid, body.gender, body.avatarUri).run();
           }
+          return Response.json({ ok: true }, { headers: corsHeaders });
+        }
 
-          await env.DB.prepare(`
-            INSERT INTO attendance (id, userId, userName, timestamp, status, confidenceScore, deviceInfo)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).bind(
-            id,
-            body.userId,
-            body.userName, 
-            body.timestamp || new Date().toISOString(),
-            body.status,
-            body.confidenceScore || 0,
-            body.deviceInfo || 'Android Client'
-          ).run();
+        // --- CLASSROOMS MODULE ---
 
-          // Update User "last seen"
-          await env.DB.prepare("UPDATE users SET lastSeen = ? WHERE id = ?")
-            .bind(new Date().toISOString(), body.userId)
-            .run();
+        // GET /api/classrooms
+        if (path === "/api/classrooms" && method === "GET") {
+          const { results } = await env.DB.prepare("SELECT * FROM Classroom").all();
+          return Response.json({ data: results }, { headers: corsHeaders });
+        }
 
-          return Response.json({ success: true, id }, { status: 201, headers: corsHeaders });
+        // POST /api/classrooms
+        if (path === "/api/classrooms" && method === "POST") {
+          const body = await request.json() as any;
+          if (body.id) {
+            await env.DB.prepare("INSERT OR REPLACE INTO Classroom (id, teacherId, name, year, meta) VALUES (?, ?, ?, ?, ?)")
+              .bind(body.id, body.teacherId, body.name, body.year, body.meta).run();
+          } else {
+            await env.DB.prepare("INSERT INTO Classroom (teacherId, name, year, meta) VALUES (?, ?, ?, ?)")
+              .bind(body.teacherId, body.name, body.year, body.meta).run();
+          }
+          return Response.json({ ok: true }, { headers: corsHeaders });
+        }
+
+        // --- ATTENDANCE SESSIONS ---
+
+        // GET /api/attendance/sessions
+        if (path === "/api/attendance/sessions" && method === "GET") {
+           const classId = url.searchParams.get("classId");
+           if (!classId) return Response.json({ error: "classId required" }, { status: 400, headers: corsHeaders });
+           
+           const { results } = await env.DB.prepare("SELECT * FROM AttendanceSession WHERE classId = ? ORDER BY startedAt DESC").bind(classId).all();
+           return Response.json({ data: results }, { headers: corsHeaders });
+        }
+
+        // POST /api/attendance/sessions
+        if (path === "/api/attendance/sessions" && method === "POST") {
+           const body = await request.json() as any;
+           const res = await env.DB.prepare("INSERT INTO AttendanceSession (classId, startedAt, location, note) VALUES (?, ?, ?, ?)")
+             .bind(body.classId, body.startedAt || new Date().toISOString(), body.location, body.note).run();
+           return Response.json({ ok: true, id: res.meta.last_row_id }, { status: 201, headers: corsHeaders });
+        }
+
+        // --- FACE EMBEDDINGS ---
+
+        // GET /api/face/embeddings
+        if (path === "/api/face/embeddings" && method === "GET") {
+           const studentId = url.searchParams.get("studentId");
+           if (!studentId) return Response.json({ error: "studentId required" }, { status: 400, headers: corsHeaders });
+           
+           const { results } = await env.DB.prepare("SELECT * FROM FaceEmbedding WHERE studentId = ?").bind(studentId).all();
+           return Response.json({ data: results }, { headers: corsHeaders });
+        }
+
+        // POST /api/face/embeddings
+        if (path === "/api/face/embeddings" && method === "POST") {
+           const body = await request.json() as any;
+           // Expect vector as base64 or array, convert if needed. D1 supports blob from array buffer.
+           // For simplicity, assuming client sends hex or we store as blob.
+           // In JS Worker, best to store as ArrayBuffer.
+           const vector = body.vector; // Assume base64 or array
+           
+           const res = await env.DB.prepare("INSERT INTO FaceEmbedding (studentId, modelVer, vector, quality) VALUES (?, ?, ?, ?)")
+             .bind(body.studentId, body.modelVer, vector, body.quality).run();
+             
+           return Response.json({ ok: true, id: res.meta.last_row_id }, { status: 201, headers: corsHeaders });
         }
 
         return new Response("API Not Found", { status: 404, headers: corsHeaders });

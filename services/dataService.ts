@@ -72,9 +72,24 @@ export const fetchUsers = async (): Promise<User[]> => {
   }
 
   try {
-    const res = await fetch(`${API_BASE_URL}/api/users`);
-    if (!res.ok) throw new Error('Failed to fetch users');
-    return await res.json();
+    // Adapted to new schema: Fetch students, assume classId 1 for demo list
+    // Or fetch all students if API supports it. Worker now expects classId query param.
+    // For admin list view, we might need an endpoint to list all students or fetch by class.
+    // Let's assume classId=1 is the default class for now.
+    const res = await fetch(`${API_BASE_URL}/api/students?classId=1`);
+    if (!res.ok) throw new Error('Failed to fetch students');
+    const { data } = await res.json();
+    
+    // Map Student schema to User type for frontend
+    return data.map((s: any) => ({
+        id: s.id.toString(),
+        name: s.name,
+        department: `Class ${s.classId}`, // Map Class to Dept
+        role: 'Student',
+        status: 'active',
+        avatarUrl: s.avatarUri,
+        faceEmbeddings: null
+    }));
   } catch (error) {
     console.warn("API request failed, falling back to mock data");
     return generateMockUsers();
@@ -90,7 +105,21 @@ export const fetchRecentAttendance = async (): Promise<AttendanceRecord[]> => {
   try {
     const res = await fetch(`${API_BASE_URL}/api/attendance`);
     if (!res.ok) throw new Error('Failed to fetch attendance');
-    return await res.json();
+    // New Worker returns array directly for this endpoint or inside { data: [] }?
+    // Worker code: return Response.json(results); -> Array
+    const data = await res.json();
+    
+    // Ensure we handle both array or { data: [] } format just in case
+    const results = Array.isArray(data) ? data : (data.data || []);
+
+    return results.map((r: any) => ({
+        id: r.id.toString(),
+        userId: r.studentId.toString(),
+        userName: r.userName,
+        timestamp: r.timestamp,
+        status: r.status as AttendanceStatus,
+        confidenceScore: r.confidenceScore
+    }));
   } catch (error) {
     console.warn("API request failed, falling back to mock data");
     return generateMockAttendance();
