@@ -16,6 +16,32 @@ async function hashPassword(password: string): Promise<string> {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Helper: Generate random 6-digit code
+function generateVerificationCode(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Helper: Hash verification code for storage
+async function hashVerificationCode(code: string): Promise<string> {
+  const msgBuffer = new TextEncoder().encode(code);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Helper: Mock email sending (in production, integrate with SendGrid/AWS SES/etc)
+async function sendVerificationEmail(email: string, code: string): Promise<boolean> {
+  try {
+    // TODO: 在生产环境中集成真实的邮件服务（如SendGrid、AWS SES等）
+    // 这里使用模拟实现，返回成功
+    console.log(`[Mock Email] Sent verification code ${code} to ${email}`);
+    return true;
+  } catch (error) {
+    console.error('Failed to send email:', error);
+    return false;
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -76,17 +102,32 @@ export default {
              return Response.json({ error: "Missing required fields" }, { status: 400, headers: corsHeaders });
           }
 
-          // Check if username exists
-          const existing = await env.DB.prepare("SELECT id FROM Teacher WHERE username = ?").bind(body.username).first();
+          // Check if username or email exists
+          let query = "SELECT id FROM Teacher WHERE username = ?";
+          let checkParams = [body.username];
+          if (body.email) {
+            query += " OR email = ?";
+            checkParams.push(body.email);
+          }
+          
+          const existing = await env.DB.prepare(query).bind(...checkParams).first();
           if (existing) {
-            return Response.json({ error: "Username already exists" }, { status: 409, headers: corsHeaders });
+            return Response.json({ error: "Username or Email already exists" }, { status: 409, headers: corsHeaders });
           }
 
           const hashedPassword = await hashPassword(body.password);
 
           // Insert Teacher
-          const res = await env.DB.prepare("INSERT INTO Teacher (name, username, password) VALUES (?, ?, ?)")
-            .bind(body.name, body.username, hashedPassword)
+          let insertQuery = "INSERT INTO Teacher (name, username, password) VALUES (?, ?, ?)";
+          let insertParams = [body.name, body.username, hashedPassword];
+
+          if (body.email) {
+            insertQuery = "INSERT INTO Teacher (name, username, password, email) VALUES (?, ?, ?, ?)";
+            insertParams = [body.name, body.username, hashedPassword, body.email];
+          }
+
+          const res = await env.DB.prepare(insertQuery)
+            .bind(...insertParams)
             .run();
 
           return Response.json({ 
@@ -94,6 +135,7 @@ export default {
             data: { 
                 id: res.meta.last_row_id, 
                 username: body.username,
+                email: body.email,
                 name: body.name 
             } 
           }, { status: 201, headers: corsHeaders });
@@ -102,14 +144,19 @@ export default {
         // 0. POST /api/auth/login (Teacher Login)
         if (path === "/api/auth/login" && method === "POST") {
           const body = await request.json() as any;
-          if (!body.username || !body.password) { // Android uses 'username'
-             // Fallback for web calling with 'email'
-             const userKey = body.username || body.email;
-             if(!userKey) return Response.json({ error: "Missing username/email or password" }, { status: 400, headers: corsHeaders });
-             body.username = userKey;
+          
+          // Determine the user identifier (username or email)
+          const userKey = body.username || body.email;
+          
+          if (!userKey || !body.password) {
+             return Response.json({ error: "Missing username/email or password" }, { status: 400, headers: corsHeaders });
           }
 
-          const teacher = await env.DB.prepare("SELECT * FROM Teacher WHERE username = ?").bind(body.username).first();
+          // Support login by username OR email
+          const teacher = await env.DB.prepare("SELECT * FROM Teacher WHERE username = ? OR email = ?")
+            .bind(userKey, userKey)
+            .first();
+
           if (!teacher) {
              return Response.json({ error: "Invalid credentials" }, { status: 401, headers: corsHeaders });
           }
@@ -127,10 +174,156 @@ export default {
             data: { 
               id: teacher.id, 
               username: teacher.username,
+              email: teacher.email,
               name: teacher.name,
               token: token 
             } 
           }, { headers: corsHeaders });
+        }
+
+        // --- EMAIL CODE AUTH ROUTES ---
+
+        // 1. POST /api/auth/email-code/send - 发送验证码
+        if (path === "/api/auth/email-code/send" && method === "POST") {
+          const body = await request.json() as any;
+          const email = body.email?.toLowerCase();
+
+          if (!email) {
+            return Response.json({ error: "Email is required" }, { status: 400, headers: corsHeaders });
+          }
+
+          // 验证邮箱格式
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(email)) {
+            return Response.json({ error: "Invalid email format" }, { status: 400, headers: corsHeaders });
+          }
+
+          try {
+            // 检查该邮箱是否已注册为教师账户
+            const existingTeacher = await env.DB.prepare(
+              "SELECT id FROM Teacher WHERE email = ?"
+            ).bind(email).first();
+
+            if (!existingTeacher) {
+              return Response.json({ 
+                error: "Email not registered. Please register first." 
+              }, { status: 404, headers: corsHeaders });
+            }
+
+            // 检查该邮箱在最近1分钟内是否已发送过验证码（防止频繁请求）
+            const recentCode = await env.DB.prepare(
+              "SELECT id FROM EmailLoginCode WHERE email = ? AND lastSentAt > datetime('now', '-1 minute') AND usedAt IS NULL ORDER BY createdAt DESC LIMIT 1"
+            ).bind(email).first();
+
+            if (recentCode) {
+              return Response.json({
+                error: "Verification code already sent. Please wait 1 minute before requesting again."
+              }, { status: 429, headers: corsHeaders });
+            }
+
+            // 生成验证码
+            const code = generateVerificationCode();
+            const codeHash = await hashVerificationCode(code);
+            const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10分钟有效期
+
+            // 获取客户端IP和User-Agent
+            const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || 'unknown';
+            const userAgent = request.headers.get('user-agent') || 'unknown';
+
+            // 保存验证码到数据库
+            await env.DB.prepare(
+              "INSERT INTO EmailLoginCode (email, code, codeHash, expiresAt, teacherId, sendCount, lastSentAt, ip, userAgent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            ).bind(email, code, codeHash, expiresAt, existingTeacher.id, 1, new Date().toISOString(), clientIp, userAgent).run();
+
+            // 发送邮件（模拟）
+            await sendVerificationEmail(email, code);
+
+            return Response.json({ 
+              ok: true,
+              message: "Verification code sent to your email"
+            }, { headers: corsHeaders });
+          } catch (error: any) {
+            console.error('Error sending verification code:', error);
+            return Response.json({ 
+              error: "Failed to send verification code" 
+            }, { status: 500, headers: corsHeaders });
+          }
+        }
+
+        // 2. POST /api/auth/email-code/verify - 验证码登录
+        if (path === "/api/auth/email-code/verify" && method === "POST") {
+          const body = await request.json() as any;
+          const email = body.email?.toLowerCase();
+          const code = body.code?.trim();
+
+          if (!email || !code) {
+            return Response.json({ 
+              error: "Email and verification code are required" 
+            }, { status: 400, headers: corsHeaders });
+          }
+
+          try {
+            // 查找最近的未使用的验证码
+            const emailCode = await env.DB.prepare(
+              "SELECT * FROM EmailLoginCode WHERE email = ? AND usedAt IS NULL ORDER BY createdAt DESC LIMIT 1"
+            ).bind(email).first();
+
+            if (!emailCode) {
+              return Response.json({ 
+                error: "No verification code found. Please request a new one." 
+              }, { status: 404, headers: corsHeaders });
+            }
+
+            // 检查验证码是否已过期
+            if (new Date(emailCode.expiresAt) < new Date()) {
+              return Response.json({ 
+                error: "Verification code has expired. Please request a new one." 
+              }, { status: 401, headers: corsHeaders });
+            }
+
+            // 验证验证码
+            const codeHash = await hashVerificationCode(code);
+            if (codeHash !== emailCode.codeHash) {
+              return Response.json({ 
+                error: "Invalid verification code" 
+              }, { status: 401, headers: corsHeaders });
+            }
+
+            // 标记验证码为已使用
+            await env.DB.prepare(
+              "UPDATE EmailLoginCode SET usedAt = ? WHERE id = ?"
+            ).bind(new Date().toISOString(), emailCode.id).run();
+
+            // 获取教师信息
+            const teacher = await env.DB.prepare(
+              "SELECT * FROM Teacher WHERE id = ?"
+            ).bind(emailCode.teacherId).first();
+
+            if (!teacher) {
+              return Response.json({ 
+                error: "Teacher account not found" 
+              }, { status: 404, headers: corsHeaders });
+            }
+
+            // 生成会话Token
+            const token = crypto.randomUUID();
+
+            return Response.json({
+              success: true,
+              data: {
+                id: teacher.id,
+                username: teacher.username,
+                email: teacher.email,
+                name: teacher.name,
+                token: token
+              }
+            }, { headers: corsHeaders });
+          } catch (error: any) {
+            console.error('Error verifying code:', error);
+            return Response.json({ 
+              error: "Failed to verify code" 
+            }, { status: 500, headers: corsHeaders });
+          }
         }
 
         // --- DATA ROUTES ---

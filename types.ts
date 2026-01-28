@@ -18,7 +18,9 @@ export interface User {
 
 export interface AdminUser {
   id: string;
-  email: string;
+  username: string;
+  name: string;
+  email?: string;
   token?: string;
 }
 
@@ -44,4 +46,29 @@ export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
+}
+
+// ===== Email Code Authentication =====
+export interface EmailLoginCode {
+  id: number;
+  email: string;
+  code: string;
+  codeHash: string;
+  expiresAt: string; // ISO timestamp
+  createdAt: string;
+  teacherId?: number;
+  usedAt?: string;
+  sendCount: number;
+  lastSentAt: string;
+  ip?: string;
+  userAgent?: string;
+}
+
+export interface SendCodeRequest {
+  email: string;
+}
+
+export interface VerifyCodeRequest {
+  email: string;
+  code: string;
 }

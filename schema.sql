@@ -4,9 +4,27 @@ CREATE TABLE IF NOT EXISTS Teacher (
     name TEXT NOT NULL,
     username TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
+    email TEXT UNIQUE,
     avatarUri TEXT,
     createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+/* 邮箱验证码表 */
+CREATE TABLE IF NOT EXISTS EmailLoginCode (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    code TEXT NOT NULL,
+    codeHash TEXT NOT NULL,
+    expiresAt TIMESTAMP NOT NULL,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    teacherId INTEGER,
+    usedAt TIMESTAMP,
+    sendCount INTEGER DEFAULT 1,
+    lastSentAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    ip TEXT,
+    userAgent TEXT,
+    FOREIGN KEY (teacherId) REFERENCES Teacher(id) ON DELETE SET NULL
 );
 
 /* 班级表 */
@@ -96,6 +114,9 @@ CREATE INDEX IF NOT EXISTS idx_result_session ON AttendanceResult(sessionId);
 CREATE INDEX IF NOT EXISTS idx_result_student ON AttendanceResult(studentId);
 CREATE INDEX IF NOT EXISTS idx_photo_session ON PhotoAsset(sessionId);
 CREATE INDEX IF NOT EXISTS idx_sync_entity ON SyncLog(entity, entityId);
+CREATE INDEX IF NOT EXISTS idx_email_login_code_email ON EmailLoginCode(email);
+CREATE INDEX IF NOT EXISTS idx_email_login_code_expires ON EmailLoginCode(expiresAt);
+CREATE INDEX IF NOT EXISTS idx_teacher_email ON Teacher(email);
 
 /* 创建触发器：更新Teacher表的updatedAt字段 */
 CREATE TRIGGER IF NOT EXISTS update_teacher_timestamp 
