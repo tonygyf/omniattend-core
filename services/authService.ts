@@ -1,7 +1,7 @@
 import { AdminUser, ApiResponse } from '../types';
 
 // CONFIGURATION
-const API_BASE_URL = "";
+const API_BASE_URL = "https://omni.gyf123.dpdns.org";
 
 interface AuthResponse {
   id: string;
