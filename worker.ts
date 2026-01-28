@@ -73,7 +73,7 @@ export default {
           let userCount = 0;
           try {
              // Try a lightweight query to check D1 connection
-             const result = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first();
+             const result = await env.DB.prepare("SELECT COUNT(*) as count FROM Teacher").first();
              userCount = result.count as number;
              dbStatus = "connected";
           } catch (e) {
