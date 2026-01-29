@@ -11,21 +11,7 @@ CREATE TABLE IF NOT EXISTS Teacher (
 );
 
 /* 邮箱验证码表 */
-CREATE TABLE IF NOT EXISTS EmailLoginCode (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL,
-    code TEXT NOT NULL,
-    codeHash TEXT NOT NULL,
-    expiresAt TIMESTAMP NOT NULL,
-    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    teacherId INTEGER,
-    usedAt TIMESTAMP,
-    sendCount INTEGER DEFAULT 1,
-    lastSentAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    ip TEXT,
-    userAgent TEXT,
-    FOREIGN KEY (teacherId) REFERENCES Teacher(id) ON DELETE SET NULL
-);
+
 
 /* 班级表 */
 CREATE TABLE IF NOT EXISTS Classroom (

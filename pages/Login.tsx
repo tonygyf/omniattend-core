@@ -347,7 +347,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
               邮箱找回密码：未开通；当前可用接口：/api/auth/email-code/send，/api/auth/email-code/verify
             </p>
           </>
-          </>
+          
         )}
 
         {/* Footer */}
