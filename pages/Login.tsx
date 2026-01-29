@@ -210,9 +210,6 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
-                <p className="text-xs text-slate-500 mt-2">
-                  邮箱找回密码：未开通；当前可用接口：/api/auth/email-code/send，/api/auth/email-code/verify
-                </p>
               </div>
               <div className="flex items-center justify-between">
                 <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -346,6 +343,10 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
                 </button>
               )}
             </form>
+            <p className="text-xs text-slate-500 mt-4 text-center">
+              邮箱找回密码：未开通；当前可用接口：/api/auth/email-code/send，/api/auth/email-code/verify
+            </p>
+          </>
           </>
         )}
 

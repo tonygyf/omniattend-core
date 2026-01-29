@@ -65,31 +65,46 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
   }
 };
 
-export const fetchUsers = async (): Promise<User[]> => {
+export const fetchUsers = async (teacherId?: string | number): Promise<User[]> => {
   if (USE_MOCK) {
     await new Promise(resolve => setTimeout(resolve, 600));
     return generateMockUsers();
   }
 
   try {
-    // Adapted to new schema: Fetch students, assume classId 1 for demo list
-    // Or fetch all students if API supports it. Worker now expects classId query param.
-    // For admin list view, we might need an endpoint to list all students or fetch by class.
-    // Let's assume classId=1 is the default class for now.
-    const res = await fetch(`${API_BASE_URL}/api/students?classId=1`);
-    if (!res.ok) throw new Error('Failed to fetch students');
-    const { data } = await res.json();
-    
-    // Map Student schema to User type for frontend
-    return data.map((s: any) => ({
-        id: s.id.toString(),
+    // Load classrooms and filter by teacherId (if provided)
+    const cr = await fetch(`${API_BASE_URL}/api/classrooms`);
+    if (!cr.ok) throw new Error('Failed to fetch classrooms');
+    const { data: rooms } = await cr.json();
+    const targetRooms = (teacherId ? rooms.filter((r: any) => r.teacherId?.toString() === teacherId.toString()) : rooms);
+    if (!targetRooms || targetRooms.length === 0) {
+      return [];
+    }
+
+    // Fetch students for all matched classrooms
+    const studentLists = await Promise.all(
+      targetRooms.map((room: any) =>
+        fetch(`${API_BASE_URL}/api/students?classId=${room.id}`)
+          .then(res => res.ok ? res.json() : Promise.resolve({ data: [] }))
+          .then(json => ({ room, students: json.data || [] }))
+      )
+    );
+
+    // Flatten and map to User type
+    const allStudents = studentLists.flatMap(({ room, students }) =>
+      students.map((s: any) => ({
+        id: s.id?.toString?.() ?? String(s.id),
         name: s.name,
-        department: `Class ${s.classId}`, // Map Class to Dept
+        department: room.name,
         role: 'Student',
+        sid: s.sid,
         status: 'active',
         avatarUrl: s.avatarUri,
         faceEmbeddings: null
-    }));
+      }))
+    );
+
+    return allStudents;
   } catch (error) {
     console.warn("API request failed, falling back to mock data");
     return generateMockUsers();

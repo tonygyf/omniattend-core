@@ -2,18 +2,20 @@ import React, { useEffect, useState } from 'react';
 import { fetchUsers } from '../services/dataService';
 import { User } from '../types';
 import { Search, Plus, MoreVertical, ShieldCheck } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const UsersPage: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const { user } = useAuth();
 
   useEffect(() => {
     loadUsers();
-  }, []);
+  }, [user]);
 
   const loadUsers = async () => {
-    const data = await fetchUsers();
+    const data = await fetchUsers(user?.id);
     setUsers(data);
     setLoading(false);
   };
@@ -27,8 +29,8 @@ const UsersPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Employees</h1>
-          <p className="text-slate-500">Manage access and face data for the attendance system.</p>
+          <h1 className="text-2xl font-bold text-slate-800">Students</h1>
+          <p className="text-slate-500">Manage student information and face enrollment status.</p>
         </div>
         <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
           <Plus size={18} />
@@ -56,8 +58,8 @@ const UsersPage: React.FC = () => {
           <table className="w-full text-left text-sm text-slate-600">
             <thead className="bg-slate-50 text-slate-700 font-semibold uppercase text-xs">
               <tr>
-                <th className="px-6 py-4">Employee</th>
-                <th className="px-6 py-4">Role</th>
+                <th className="px-6 py-4">Student</th>
+                <th className="px-6 py-4">SID</th>
                 <th className="px-6 py-4">Status</th>
                 <th className="px-6 py-4">Face Data</th>
                 <th className="px-6 py-4 text-right">Actions</th>
@@ -84,7 +86,7 @@ const UsersPage: React.FC = () => {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-600">{user.role}</td>
+                    <td className="px-6 py-4 text-slate-600">{user.sid || '-'}</td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
                         ${user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}

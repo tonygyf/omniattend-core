@@ -10,6 +10,7 @@ export interface User {
   name: string;
   department: string;
   role: string;
+  sid?: string;
   avatarUrl?: string;
   status: 'active' | 'inactive';
   lastSeen?: string;

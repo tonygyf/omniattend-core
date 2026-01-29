@@ -19,7 +19,15 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setIsOpen }) => {
-  const { logout } = useAuth();
+  const { user, logout } = useAuth();
+  const remembered = (() => {
+    try {
+      return !!localStorage.getItem('facecheck_admin_credentials');
+    } catch {
+      return false;
+    }
+  })();
+  const avatarUrl = (user as any)?.avatarUri || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user?.name || 'Teacher') + '&background=0D8ABC&color=fff';
   
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -83,6 +91,34 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
             );
           })}
         </nav>
+
+        {/* Current User Card */}
+        {user && (
+          <div className="mx-4 mb-3 p-3 bg-slate-800 rounded-xl border border-slate-700">
+            <div className="flex items-center gap-3">
+              <img
+                src={avatarUrl}
+                alt={user.name}
+                className="w-10 h-10 rounded-full object-cover border border-slate-700"
+              />
+              <div className="flex-1">
+                <div className="text-sm font-semibold text-white">{user.name}</div>
+                <div className="text-xs text-slate-400">{user.email || user.username}</div>
+              </div>
+            </div>
+            <div className="mt-2 flex items-center justify-between">
+              <span className={`text-xs px-2 py-0.5 rounded-full ${remembered ? 'bg-green-700 text-green-100' : 'bg-slate-700 text-slate-200'}`}>
+                {remembered ? '已记住登录' : '未记住登录'}
+              </span>
+              <button
+                onClick={() => handleNav('settings')}
+                className="text-xs text-blue-300 hover:text-blue-200"
+              >
+                管理账户
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="p-4 border-t border-slate-700 space-y-2">
           <button 
