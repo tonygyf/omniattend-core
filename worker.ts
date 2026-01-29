@@ -93,6 +93,49 @@ export default {
           }, { headers: corsHeaders });
         }
 
+        // 1. GET /api/stats - Dashboard metrics
+        if (path === "/api/stats" && method === "GET") {
+          try {
+            const totalUsersRow = await env.DB.prepare("SELECT COUNT(*) as count FROM Student").first();
+            const presentRow = await env.DB.prepare(
+              "SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Present' AND date(decidedAt) = date('now')"
+            ).first();
+            const absentRow = await env.DB.prepare(
+              "SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Absent' AND date(decidedAt) = date('now')"
+            ).first();
+            // lateToday不可用，数据库未定义迟到状态
+            const lateToday = 0;
+            
+            // Weekly trend: last 7 days total results per day
+            const { results: trendRows } = await env.DB.prepare(
+              "SELECT date(decidedAt) as day, COUNT(*) as count FROM AttendanceResult WHERE decidedAt >= datetime('now','-6 day') GROUP BY date(decidedAt) ORDER BY day ASC"
+            ).all();
+            
+            // Normalize to 7 days array with day labels (Mon..Sun)
+            const makeDayLabel = (d: Date) => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()];
+            const days: { day: string; count: number }[] = [];
+            for (let i = 6; i >= 0; i--) {
+              const dateObj = new Date();
+              dateObj.setUTCDate(dateObj.getUTCDate() - i);
+              const isoDay = dateObj.toISOString().slice(0,10);
+              const row = (trendRows || []).find((r: any) => (r.day || '').startsWith(isoDay));
+              days.push({ day: makeDayLabel(dateObj), count: row ? (row.count as number) : 0 });
+            }
+            
+            return Response.json({
+              totalUsers: (totalUsersRow?.count as number) || 0,
+              presentToday: (presentRow?.count as number) || 0,
+              lateToday,
+              absentToday: (absentRow?.count as number) || 0,
+              weeklyTrend: days
+            }, { headers: corsHeaders });
+          } catch (e: any) {
+            return Response.json({
+              totalUsers: 0, presentToday: 0, lateToday: 0, absentToday: 0, weeklyTrend: []
+            }, { headers: corsHeaders });
+          }
+        }
+
         // --- AUTH ROUTES ---
 
         // 0. POST /api/auth/register (Teacher Registration)
