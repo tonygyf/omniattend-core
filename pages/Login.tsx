@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { loginAdmin, sendEmailVerificationCode, verifyEmailCode } from '../services/authService';
-import { Lock, Mail, Loader2, ArrowRight, Zap, Clock } from 'lucide-react';
+import { Lock, Mail, Loader2, ArrowRight, Zap, Clock, Eye, EyeOff } from 'lucide-react';
 
 interface LoginProps {
   onNavigateRegister: () => void;
@@ -17,6 +17,21 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [remember, setRemember] = useState(false);
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem('facecheck_admin_credentials');
+      if (saved) {
+        const obj = JSON.parse(saved);
+        if (obj && typeof obj === 'object') {
+          if (obj.email) setEmail(obj.email);
+          if (obj.password) setPassword(obj.password);
+          setRemember(true);
+        }
+      }
+    } catch {}
+  }, []);
 
   // --- Email Code Login State ---
   const [loginMode, setLoginMode] = useState<LoginMode>('password');
@@ -36,6 +51,15 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
     const res = await loginAdmin(e, p);
     if (res.success && res.data) {
       login(res.data);
+      if (remember) {
+        try {
+          localStorage.setItem('facecheck_admin_credentials', JSON.stringify({ email: e, password: p }));
+        } catch {}
+      } else {
+        try {
+          localStorage.removeItem('facecheck_admin_credentials');
+        } catch {}
+      }
     } else {
       setError(res.error || 'Invalid credentials');
       setLoading(false);
@@ -170,14 +194,36 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     required
                     className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                     placeholder="••••••••"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    aria-label="Toggle password visibility"
+                  >
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
                 </div>
+                <p className="text-xs text-slate-500 mt-2">
+                  邮箱找回密码：未开通；当前可用接口：/api/auth/email-code/send，/api/auth/email-code/verify
+                </p>
+              </div>
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(e) => setRemember(e.target.checked)}
+                    className="rounded border-slate-300"
+                  />
+                  记住密码
+                </label>
               </div>
 
               <button
