@@ -115,15 +115,16 @@ export default {
             return Response.json({ error: "Username or Email already exists" }, { status: 409, headers: corsHeaders });
           }
 
-          const hashedPassword = await hashPassword(body.password);
+          // 原哈希：const hashedPassword = await hashPassword(body.password);
 
-          // Insert Teacher
+          // Insert Teacher（使用明文密码存储）
+          // 原：使用 hashedPassword
           let insertQuery = "INSERT INTO Teacher (name, username, password) VALUES (?, ?, ?)";
-          let insertParams = [body.name, body.username, hashedPassword];
+          let insertParams = [body.name, body.username, body.password];
 
           if (body.email) {
             insertQuery = "INSERT INTO Teacher (name, username, password, email) VALUES (?, ?, ?, ?)";
-            insertParams = [body.name, body.username, hashedPassword, body.email];
+            insertParams = [body.name, body.username, body.password, body.email];
           }
 
           const res = await env.DB.prepare(insertQuery)
@@ -161,8 +162,9 @@ export default {
              return Response.json({ error: "Invalid credentials" }, { status: 401, headers: corsHeaders });
           }
 
-          const hashedPassword = await hashPassword(body.password);
-          if (hashedPassword !== teacher.password) {
+          // 明文比对；原哈希比对参考：
+          // if ((await hashPassword(body.password)) !== teacher.password) { ... }
+          if (body.password !== teacher.password) {
              return Response.json({ error: "Invalid credentials" }, { status: 401, headers: corsHeaders });
           }
 
