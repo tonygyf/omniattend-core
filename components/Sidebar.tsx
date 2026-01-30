@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Modal from './Modal';
+import { getFullImageUrl } from '../services/cdn';
 
 interface SidebarProps {
   currentPage: string;
@@ -43,10 +44,9 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
   })();
   const rawAvatar = (user as any)?.avatarUri || (user as any)?.avatarUrl;
   const normalizedAvatar = typeof rawAvatar === 'string' ? rawAvatar.trim() : '';
+  const candidate = getFullImageUrl(normalizedAvatar);
   const avatarUrl = normalizedAvatar
-    ? (normalizedAvatar.startsWith('http')
-        ? normalizedAvatar
-        : 'https://files.gyf123.dpdns.org/' + normalizedAvatar.replace(/^\/+/, ''))
+    ? candidate
     : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user?.name || 'Teacher') + '&background=0D8ABC&color=fff';
   
   const navItems = [

@@ -3,6 +3,7 @@ import { fetchUsers } from '../services/dataService';
 import { User } from '../types';
 import { Search, Plus, MoreVertical, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { getFullImageUrl } from '../services/cdn';
 
 const UsersPage: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -76,7 +77,7 @@ const UsersPage: React.FC = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <img 
-                          src={user.avatarUrl ? (`https://files.gyf123.dpdns.org/${user.avatarUrl}`) : (`https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=0D8ABC&color=fff`)} 
+                          src={user.avatarUrl ? getFullImageUrl(user.avatarUrl) : (`https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=0D8ABC&color=fff`)} 
                           alt={user.name} 
                           className="w-10 h-10 rounded-full object-cover border border-slate-200"
                         />
