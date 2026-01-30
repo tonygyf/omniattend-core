@@ -10,6 +10,7 @@ import {
   X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import Modal from './Modal';
 
 interface SidebarProps {
   currentPage: string;
@@ -19,7 +20,11 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setIsOpen }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, login } = useAuth();
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [editName, setEditName] = React.useState(user?.name || '');
+  const [editEmail, setEditEmail] = React.useState(user?.email || (user as any)?.username || '');
+  const [editAvatar, setEditAvatar] = React.useState((user as any)?.avatarUri || (user as any)?.avatarUrl || '');
   const remembered = (() => {
     try {
       return !!localStorage.getItem('facecheck_admin_credentials');
@@ -27,7 +32,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
       return false;
     }
   })();
-  const avatarUrl = (user as any)?.avatarUri || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user?.name || 'Teacher') + '&background=0D8ABC&color=fff';
+  const rawAvatar = (user as any)?.avatarUri || (user as any)?.avatarUrl;
+  const avatarUrl = rawAvatar 
+    ? 'https://files.gyf123.dpdns.org/' + rawAvatar 
+    : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user?.name || 'Teacher') + '&background=0D8ABC&color=fff';
   
   const navItems = [
     { id: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
@@ -111,7 +119,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
                 {remembered ? '已记住登录' : '未记住登录'}
               </span>
               <button
-                onClick={() => handleNav('settings')}
+                onClick={() => setEditOpen(true)}
                 className="text-xs text-blue-300 hover:text-blue-200"
               >
                 管理账户
@@ -135,6 +143,72 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
           </button>
         </div>
       </aside>
+      
+      {/* Edit Current User Modal */}
+      <Modal open={editOpen} title="编辑当前管理账户" onClose={() => setEditOpen(false)}>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">姓名</label>
+            <input
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">邮箱/用户名</label>
+            <input
+              type="text"
+              value={editEmail}
+              onChange={(e) => setEditEmail(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">头像相对路径（R2）</label>
+            <input
+              type="text"
+              placeholder="例如: avatars/teacher1.jpg"
+              value={editAvatar}
+              onChange={(e) => setEditAvatar(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200"
+            />
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">实际展示路径将为 https://files.gyf123.dpdns.org/ + 相对路径</p>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              onClick={() => setEditOpen(false)}
+              className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700"
+            >
+              取消
+            </button>
+            <button
+              onClick={() => {
+                if (!user) return setEditOpen(false);
+                const updated = { ...user, name: editName };
+                if (editEmail) {
+                  if ('email' in updated) {
+                    (updated as any).email = editEmail;
+                  } else {
+                    (updated as any).username = editEmail;
+                  }
+                }
+                if (editAvatar) {
+                  (updated as any).avatarUri = editAvatar;
+                } else {
+                  delete (updated as any).avatarUri;
+                }
+                login(updated as any);
+                setEditOpen(false);
+              }}
+              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              保存
+            </button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 };

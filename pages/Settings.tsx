@@ -167,6 +167,23 @@ const SettingsPage: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* R2 Object Storage */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-600">
+              <div className="flex items-center gap-3 mb-2">
+                <Database className="text-amber-500" size={20} />
+                <span className="font-medium text-slate-700 dark:text-slate-200">R2 对象存储</span>
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+                  <span className="text-sm font-semibold text-slate-800 dark:text-white">已连接</span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  基础路径：<span className="font-mono">https://files.gyf123.dpdns.org/</span>
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
