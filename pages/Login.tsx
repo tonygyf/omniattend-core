@@ -136,8 +136,8 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
           <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center mx-auto mb-4 text-white font-bold text-xl shadow-lg shadow-blue-200">
             F
           </div>
-          <h1 className="text-2xl font-bold text-slate-800">Welcome Back</h1>
-          <p className="text-slate-500">Sign in to OmniAttend</p>
+          <h1 className="text-2xl font-bold text-slate-800">欢迎回来</h1>
+          <p className="text-slate-500">登录 OmniAttend</p>
         </div>
 
         {/* Login Mode Toggle */}
@@ -150,7 +150,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
                 : 'text-slate-600 hover:text-slate-800'
             }`}
           >
-            Password
+            密码登录
           </button>
           <button
             onClick={() => switchMode('email-code')}
@@ -160,7 +160,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
                 : 'text-slate-600 hover:text-slate-800'
             }`}
           >
-            Email Code
+            邮箱验证码
           </button>
         </div>
 
@@ -175,14 +175,14 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
 
             <form onSubmit={handlePasswordSubmit} className="space-y-5">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Email or Username</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">邮箱或用户名</label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <input
                     type="text"
                     required
                     className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                    placeholder="admin@example.com or username"
+                    placeholder="admin@example.com 或 用户名"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />
@@ -190,7 +190,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Password</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">密码</label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <input
@@ -228,7 +228,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
                 disabled={loading}
                 className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2 disabled:opacity-70"
               >
-                {loading ? <Loader2 className="animate-spin" size={20} /> : <>Sign In <ArrowRight size={18} /></>}
+                {loading ? <Loader2 className="animate-spin" size={20} /> : <>登录 <ArrowRight size={18} /></>}
               </button>
             </form>
 
@@ -245,7 +245,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
               className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl font-medium transition-all flex items-center justify-center gap-2"
             >
               <Zap size={18} className="text-amber-500 fill-amber-500" />
-              <span>Instant Demo Login</span>
+              <span>快速体验登录</span>
             </button>
           </>
         )}
@@ -262,7 +262,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
             <form onSubmit={codeSent ? handleVerifyCode : handleSendCode} className="space-y-5">
               {/* Email Input */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Email Address</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">邮箱地址</label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <input
@@ -280,7 +280,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
               {/* Verification Code Input (shown after code is sent) */}
               {codeSent && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Verification Code</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">验证码</label>
                   <input
                     type="text"
                     required
@@ -291,7 +291,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
                     onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                   />
                   <p className="text-xs text-slate-500 mt-2">
-                    Enter the 6-digit code sent to your email
+                    请输入邮箱中收到的 6 位验证码
                   </p>
                 </div>
               )}
@@ -305,17 +305,17 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
                 {codeSending ? (
                   <>
                     <Loader2 className="animate-spin" size={20} />
-                    Sending...
+                    正在发送...
                   </>
                 ) : codeLoading ? (
                   <>
                     <Loader2 className="animate-spin" size={20} />
-                    Verifying...
+                    正在验证...
                   </>
                 ) : codeSent ? (
-                  <>Verify Code <ArrowRight size={18} /></>
+                  <>验证验证码 <ArrowRight size={18} /></>
                 ) : (
-                  <>Send Code <ArrowRight size={18} /></>
+                  <>发送验证码 <ArrowRight size={18} /></>
                 )}
               </button>
 
@@ -323,7 +323,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
               {codeSent && codeCountdown > 0 && (
                 <p className="text-sm text-center text-slate-600 flex items-center justify-center gap-2">
                   <Clock size={16} />
-                  Resend in {codeCountdown}s
+                  {codeCountdown}s 后可重新发送
                 </p>
               )}
 
@@ -339,7 +339,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
                   }}
                   className="w-full py-2 text-blue-600 hover:text-blue-700 font-medium text-sm"
                 >
-                  Change Email
+                  更换邮箱
                 </button>
               )}
             </form>
@@ -352,16 +352,15 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
 
         {/* Footer */}
         <div className="mt-8 text-center">
-          <p className="text-slate-500 text-sm">
+            还没有账户？{' '}
             Don't have an account?{' '}
-            <button onClick={onNavigateRegister} className="text-blue-600 font-semibold hover:underline">
+              立即创建
               Create one
             </button>
           </p>
         </div>
       </div>
     </div>
-  );
 };
 
 export default Login;

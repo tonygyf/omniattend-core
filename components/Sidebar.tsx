@@ -30,10 +30,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
   const avatarUrl = (user as any)?.avatarUri || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user?.name || 'Teacher') + '&background=0D8ABC&color=fff';
   
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'users', label: 'Employees', icon: Users },
-    { id: 'attendance', label: 'Attendance Log', icon: History },
-    { id: 'insights', label: 'AI Insights', icon: BrainCircuit },
+    { id: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
+    { id: 'users', label: '学生管理', icon: Users },
+    { id: 'attendance', label: '考勤日志', icon: History },
+    { id: 'insights', label: 'AI 洞察', icon: BrainCircuit },
   ];
 
   const handleNav = (id: string) => {
@@ -125,13 +125,13 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
             onClick={() => handleNav('settings')}
             className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors">
             <Settings size={20} />
-            <span className="font-medium">Settings</span>
+            <span className="font-medium">设置</span>
           </button>
           <button 
             onClick={() => { logout(); setIsOpen(false); }}
             className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded-xl transition-colors">
             <LogOut size={20} />
-            <span className="font-medium">Sign Out</span>
+            <span className="font-medium">退出登录</span>
           </button>
         </div>
       </aside>

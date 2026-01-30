@@ -40,7 +40,7 @@ const Dashboard: React.FC = () => {
   }
 
   if (loading) {
-    return <div className="flex h-full items-center justify-center text-slate-500">Loading Dashboard...</div>;
+    return <div className="flex h-full items-center justify-center text-slate-500">正在加载仪表盘...</div>;
   }
 
   if (!stats) return null;
@@ -49,8 +49,8 @@ const Dashboard: React.FC = () => {
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Dashboard Overview</h1>
-          <p className="text-slate-500">Welcome back, Admin. Here's today's summary.</p>
+          <h1 className="text-2xl font-bold text-slate-800">仪表盘概览</h1>
+          <p className="text-slate-500">欢迎回来，今日概览如下。</p>
         </div>
         <button 
             onClick={handleSync}
@@ -58,45 +58,45 @@ const Dashboard: React.FC = () => {
             className={`flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors shadow-sm ${syncing ? 'opacity-70' : ''}`}
         >
           <RefreshCw size={16} className={`${syncing ? 'animate-spin' : ''}`} />
-          {syncing ? 'Syncing D1...' : 'Sync Data'}
+          {syncing ? '正在同步 D1...' : '同步数据'}
         </button>
       </div>
 
       {/* Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard 
-          title="Total Users" 
+          title="学生总数" 
           value={stats.totalUsers} 
           icon={Users} 
           color="bg-blue-500" 
-          trend="+2 this week"
+          trend="本周 +2"
         />
         <StatCard 
-          title="Present Today" 
+          title="今日到勤" 
           value={stats.presentToday} 
           icon={UserCheck} 
           color="bg-green-500" 
-          trend="84% Attendance"
+          trend="到勤率 84%"
         />
         <StatCard 
-          title="Late Arrivals" 
+          title="今日迟到" 
           value={stats.lateToday} 
           icon={Clock} 
           color="bg-amber-500" 
-          trend="-2 from yesterday"
+          trend="较昨日 -2"
         />
         <StatCard 
-          title="Absent" 
+          title="今日缺勤" 
           value={stats.absentToday} 
           icon={UserX} 
           color="bg-red-500" 
-          trend="Action needed"
+          trend="需要关注"
         />
       </div>
 
       {/* Main Chart Section */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <h2 className="text-lg font-semibold text-slate-800 mb-6">Weekly Attendance Trend</h2>
+        <h2 className="text-lg font-semibold text-slate-800 mb-6">近 7 日考勤趋势</h2>
         <div className="h-80 w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={stats.weeklyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>

@@ -56,8 +56,8 @@ const SettingsPage: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in dark:text-slate-200">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Settings</h1>
-        <p className="text-slate-500 dark:text-slate-400">Configure system preferences and connection details.</p>
+        <h1 className="text-2xl font-bold text-slate-800 dark:text-white">设置</h1>
+        <p className="text-slate-500 dark:text-slate-400">配置系统偏好与连接信息。</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6">
@@ -65,7 +65,7 @@ const SettingsPage: React.FC = () => {
         {/* 1. Appearance */}
         <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
           <h2 className="text-lg font-semibold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-            <Sun className="w-5 h-5" /> Appearance
+            <Sun className="w-5 h-5" /> 外观
           </h2>
           <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl">
             <div className="flex items-center gap-3">
@@ -73,8 +73,8 @@ const SettingsPage: React.FC = () => {
                 {theme === 'dark' ? <Moon size={20} /> : <Sun size={20} />}
               </div>
               <div>
-                <p className="font-medium text-slate-700 dark:text-slate-200">Interface Theme</p>
-                <p className="text-xs text-slate-500 dark:text-slate-400">{theme === 'dark' ? 'Dark mode enabled' : 'Light mode enabled'}</p>
+                <p className="font-medium text-slate-700 dark:text-slate-200">界面主题</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{theme === 'dark' ? '深色模式已启用' : '浅色模式已启用'}</p>
               </div>
             </div>
             <div className="flex bg-slate-200 dark:bg-slate-900 rounded-lg p-1">
@@ -82,13 +82,13 @@ const SettingsPage: React.FC = () => {
                 onClick={() => toggleTheme('light')}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${theme === 'light' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
               >
-                Light
+                浅色
               </button>
               <button 
                 onClick={() => toggleTheme('dark')}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${theme === 'dark' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
               >
-                Dark
+                深色
               </button>
             </div>
           </div>
@@ -97,10 +97,10 @@ const SettingsPage: React.FC = () => {
         {/* 2. Android App Configuration */}
         <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
           <h2 className="text-lg font-semibold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-            <Smartphone className="w-5 h-5" /> Android App Configuration
+            <Smartphone className="w-5 h-5" /> Android 应用配置
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-            Use this Base URL in your Android application to connect to the backend.
+            在 Android 应用中使用此 Base URL 连接后端。
           </p>
           
           <div className="flex items-center gap-2">
@@ -110,7 +110,7 @@ const SettingsPage: React.FC = () => {
             <button 
               onClick={copyToClipboard}
               className="p-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 rounded-xl transition-colors"
-              title="Copy URL"
+              title="复制地址"
             >
               {copied ? <Check size={20} /> : <Copy size={20} />}
             </button>
@@ -120,7 +120,7 @@ const SettingsPage: React.FC = () => {
         {/* 3. System Health & D1 Database */}
         <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
           <h2 className="text-lg font-semibold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-            <Server className="w-5 h-5" /> System Status
+            <Server className="w-5 h-5" /> 系统状态
           </h2>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -128,7 +128,7 @@ const SettingsPage: React.FC = () => {
             <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-600">
               <div className="flex items-center gap-3 mb-2">
                 <Database className="text-blue-500" size={20} />
-                <span className="font-medium text-slate-700 dark:text-slate-200">D1 Database</span>
+                <span className="font-medium text-slate-700 dark:text-slate-200">D1 数据库</span>
               </div>
               {loadingHealth ? (
                 <div className="animate-pulse h-4 bg-slate-200 rounded w-24"></div>
@@ -137,11 +137,11 @@ const SettingsPage: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <div className={`w-2.5 h-2.5 rounded-full ${healthData?.database?.status === 'connected' ? 'bg-green-500' : 'bg-red-500'}`}></div>
                     <span className="text-sm font-semibold capitalize text-slate-800 dark:text-white">
-                      {healthData?.database?.status || 'Unknown'}
+                      {healthData?.database?.status || '未知'}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Records: {healthData?.database?.recordCount ?? '-'}
+                    记录数：{healthData?.database?.recordCount ?? '-'}
                   </p>
                 </div>
               )}
@@ -159,10 +159,10 @@ const SettingsPage: React.FC = () => {
                  <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
-                    <span className="text-sm font-semibold text-slate-800 dark:text-white">Online</span>
+                    <span className="text-sm font-semibold text-slate-800 dark:text-white">在线</span>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Env: {healthData?.environment || 'Production'}
+                    环境：{healthData?.environment || 'Production'}
                   </p>
                 </div>
               )}

@@ -29,12 +29,12 @@ const UsersPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Students</h1>
-          <p className="text-slate-500">Manage student information and face enrollment status.</p>
+          <h1 className="text-2xl font-bold text-slate-800">学生管理</h1>
+          <p className="text-slate-500">管理学生信息与人脸录入状态。</p>
         </div>
         <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
           <Plus size={18} />
-          <span>Add Employee</span>
+          <span>新增学生</span>
         </button>
       </div>
 
@@ -45,7 +45,7 @@ const UsersPage: React.FC = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
               type="text" 
-              placeholder="Search by name or department..." 
+              placeholder="按姓名或班级搜索..." 
               className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -58,11 +58,11 @@ const UsersPage: React.FC = () => {
           <table className="w-full text-left text-sm text-slate-600">
             <thead className="bg-slate-50 text-slate-700 font-semibold uppercase text-xs">
               <tr>
-                <th className="px-6 py-4">Student</th>
-                <th className="px-6 py-4">SID</th>
-                <th className="px-6 py-4">Status</th>
-                <th className="px-6 py-4">Face Data</th>
-                <th className="px-6 py-4 text-right">Actions</th>
+                <th className="px-6 py-4">学生</th>
+                <th className="px-6 py-4">学号</th>
+                <th className="px-6 py-4">状态</th>
+                <th className="px-6 py-4">人脸数据</th>
+                <th className="px-6 py-4 text-right">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -97,7 +97,7 @@ const UsersPage: React.FC = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1.5 text-green-600 text-xs font-medium">
                         <ShieldCheck size={14} />
-                        Enrolled
+                        已录入
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
