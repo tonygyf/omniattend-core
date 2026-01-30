@@ -352,15 +352,16 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
 
         {/* Footer */}
         <div className="mt-8 text-center">
+          <p className="text-slate-500 text-sm">
             还没有账户？{' '}
-            Don't have an account?{' '}
+            <button onClick={onNavigateRegister} className="text-blue-600 font-semibold hover:underline">
               立即创建
-              Create one
             </button>
           </p>
         </div>
       </div>
     </div>
+  );
 };
 
 export default Login;
