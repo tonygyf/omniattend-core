@@ -24,7 +24,16 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
   const [editOpen, setEditOpen] = React.useState(false);
   const [editName, setEditName] = React.useState(user?.name || '');
   const [editEmail, setEditEmail] = React.useState(user?.email || (user as any)?.username || '');
-  const [editAvatar, setEditAvatar] = React.useState((user as any)?.avatarUri || (user as any)?.avatarUrl || '');
+  const [editAvatar, setEditAvatar] = React.useState('');
+
+  React.useEffect(() => {
+    if (editOpen) {
+      setEditName(user?.name || '');
+      setEditEmail(user?.email || (user as any)?.username || '');
+      const existing = ((user as any)?.avatarUri || (user as any)?.avatarUrl || '') as string;
+      setEditAvatar(existing);
+    }
+  }, [editOpen, user]);
   const remembered = (() => {
     try {
       return !!localStorage.getItem('facecheck_admin_credentials');
@@ -33,8 +42,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
     }
   })();
   const rawAvatar = (user as any)?.avatarUri || (user as any)?.avatarUrl;
-  const avatarUrl = rawAvatar 
-    ? 'https://files.gyf123.dpdns.org/' + rawAvatar 
+  const normalizedAvatar = typeof rawAvatar === 'string' ? rawAvatar.trim() : '';
+  const avatarUrl = normalizedAvatar
+    ? (normalizedAvatar.startsWith('http')
+        ? normalizedAvatar
+        : 'https://files.gyf123.dpdns.org/' + normalizedAvatar.replace(/^\/+/, ''))
     : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user?.name || 'Teacher') + '&background=0D8ABC&color=fff';
   
   const navItems = [
@@ -119,7 +131,12 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
                 {remembered ? '已记住登录' : '未记住登录'}
               </span>
               <button
-                onClick={() => setEditOpen(true)}
+                onClick={() => {
+                  setEditName(user?.name || '');
+                  setEditEmail(user?.email || (user as any)?.username || '');
+                  setEditAvatar(((user as any)?.avatarUri || (user as any)?.avatarUrl || '') as string);
+                  setEditOpen(true);
+                }}
                 className="text-xs text-blue-300 hover:text-blue-200"
               >
                 管理账户
@@ -194,8 +211,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
                     (updated as any).username = editEmail;
                   }
                 }
-                if (editAvatar) {
-                  (updated as any).avatarUri = editAvatar;
+                const trimmed = (editAvatar || '').trim();
+                if (trimmed) {
+                  (updated as any).avatarUri = trimmed.startsWith('https://files.gyf123.dpdns.org/')
+                    ? trimmed.replace(/^https:\/\/files\.gyf123\.dpdns\.org\/+/i, '')
+                    : trimmed.replace(/^\/+/, '');
                 } else {
                   delete (updated as any).avatarUri;
                 }
