@@ -16,3 +16,7 @@ database_id = "4bb2ea29-1dd7-4bd0-8ea9-7f43c27a0b3c"
 directory = "./dist"
 binding = "ASSETS"
 
+# 新增：R2 存储桶绑定
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "omni"
