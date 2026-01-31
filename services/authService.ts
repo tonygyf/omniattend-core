@@ -9,6 +9,7 @@ interface AuthResponse {
   name: string;
   email?: string;
   token: string;
+  avatarUri?: string;
 }
 
 export const loginAdmin = async (email: string, password: string): Promise<ApiResponse<AuthResponse>> => {
@@ -42,6 +43,26 @@ export const loginAdmin = async (email: string, password: string): Promise<ApiRe
     return data;
   } catch (error) {
     return { success: false, error: 'Network error during login. Ensure Worker is running or use Demo account.' };
+  }
+};
+
+export const updateProfileAvatar = async (teacherId: string, file: File, key: string): Promise<ApiResponse<{ id: string; avatarUri: string }>> => {
+  try {
+    const form = new FormData();
+    form.append('teacherId', teacherId);
+    form.append('key', key);
+    form.append('file', file);
+    const res = await fetch(`${API_BASE_URL}/api/profile/avatar`, {
+      method: 'POST',
+      body: form
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || 'Avatar update failed' };
+    }
+    return { success: true, data: { id: data.data.id, avatarUri: data.data.avatarUri } };
+  } catch (error) {
+    return { success: false, error: 'Network error during avatar update' };
   }
 };
 

@@ -137,6 +137,72 @@ export default {
           }
         }
 
+        // 3. POST /api/profile/avatar - 上传头像并更新教师avatarUri
+        if (path === "/api/profile/avatar" && method === "POST") {
+          try {
+            const contentType = request.headers.get("content-type") || "";
+            let teacherId: number | null = null;
+            let key: string | null = null;
+            let ct: string = "application/octet-stream";
+            let bin: Uint8Array | null = null;
+            
+            if (contentType.includes("application/json")) {
+              const body = await request.json() as any;
+              teacherId = Number(body.teacherId) || null;
+              key = (body.key || "").toString().trim();
+              ct = (body.contentType || "image/jpeg").toString();
+              const dataBase64 = (body.dataBase64 || "").toString();
+              if (!teacherId || !key || !dataBase64) {
+                return Response.json({ error: "teacherId, key, dataBase64 required" }, { status: 400, headers: corsHeaders });
+              }
+              bin = Uint8Array.from(atob(dataBase64), c => c.charCodeAt(0));
+            } else if (contentType.includes("multipart/form-data")) {
+              const form = await request.formData();
+              teacherId = Number(form.get("teacherId") as string) || null;
+              const file = form.get("file") as File | null;
+              key = (form.get("key") as string || "").trim();
+              if (!teacherId || !file || !key) {
+                return Response.json({ error: "teacherId, file, key required" }, { status: 400, headers: corsHeaders });
+              }
+              ct = file.type || "image/jpeg";
+              const arr = await file.arrayBuffer();
+              bin = new Uint8Array(arr);
+            } else {
+              return Response.json({ error: "Unsupported Content-Type" }, { status: 415, headers: corsHeaders });
+            }
+            
+            // Put to R2 with content type
+            const cleanKey = key!.replace(/^\/+/, "");
+            await env.R2.put(cleanKey, bin!, { httpMetadata: { contentType: ct } });
+            
+            // Update Teacher avatarUri
+            await env.DB.prepare("UPDATE Teacher SET avatarUri = ? WHERE id = ?")
+              .bind(cleanKey, teacherId!)
+              .run();
+            
+            // Return new teacher info
+            const teacher = await env.DB.prepare("SELECT * FROM Teacher WHERE id = ?")
+              .bind(teacherId!)
+              .first();
+            
+            if (!teacher) {
+              return Response.json({ error: "Teacher not found after update" }, { status: 404, headers: corsHeaders });
+            }
+            
+            return Response.json({
+              success: true,
+              data: {
+                id: teacher.id,
+                username: teacher.username,
+                email: teacher.email,
+                name: teacher.name,
+                avatarUri: teacher.avatarUri
+              }
+            }, { headers: corsHeaders });
+          } catch (e: any) {
+            return Response.json({ error: "Profile avatar update failed" }, { status: 500, headers: corsHeaders });
+          }
+        }
         // --- AUTH ROUTES ---
 
         // 0. POST /api/auth/register (Teacher Registration)
@@ -222,6 +288,7 @@ export default {
               username: teacher.username,
               email: teacher.email,
               name: teacher.name,
+              avatarUri: teacher.avatarUri,
               token: token 
             } 
           }, { headers: corsHeaders });

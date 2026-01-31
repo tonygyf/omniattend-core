@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import Modal from './Modal';
 import { getFullImageUrl } from '../services/cdn';
+import { updateProfileAvatar } from '../services/authService';
 
 interface SidebarProps {
   currentPage: string;
@@ -26,6 +27,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
   const [editName, setEditName] = React.useState(user?.name || '');
   const [editEmail, setEditEmail] = React.useState(user?.email || (user as any)?.username || '');
   const [editAvatar, setEditAvatar] = React.useState('');
+  const [avatarFile, setAvatarFile] = React.useState<File | null>(null);
+  const [uploading, setUploading] = React.useState(false);
 
   React.useEffect(() => {
     if (editOpen) {
@@ -193,12 +196,45 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
             />
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">实际展示路径将为 https://files.gyf123.dpdns.org/ + 相对路径</p>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">上传新头像（图片）</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setAvatarFile(e.target.files?.[0] || null)}
+              className="w-full"
+            />
+            <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              建议命名：avatars/teacher-{String(user?.id || 'me')}.jpg
+            </div>
+          </div>
           <div className="flex justify-end gap-2 pt-2">
             <button
               onClick={() => setEditOpen(false)}
               className="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700"
             >
               取消
+            </button>
+            <button
+              disabled={!avatarFile || uploading}
+              onClick={async () => {
+                if (!user || !avatarFile) return;
+                setUploading(true);
+                const type = avatarFile.type || 'image/jpeg';
+                const ext = type.includes('png') ? 'png' : type.includes('jpeg') ? 'jpg' : type.includes('jpg') ? 'jpg' : 'bin';
+                const suggestedKey = (editAvatar || `avatars/teacher-${String(user.id)}.${ext}`).replace(/^\/+/, '');
+                const res = await updateProfileAvatar(String(user.id), avatarFile, suggestedKey);
+                setUploading(false);
+                if (res.success && res.data) {
+                  const updated = { ...user } as any;
+                  updated.avatarUri = res.data.avatarUri;
+                  login(updated);
+                  setEditAvatar(res.data.avatarUri);
+                }
+              }}
+              className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-60"
+            >
+              {uploading ? '上传中...' : '上传头像并保存'}
             </button>
             <button
               onClick={() => {
