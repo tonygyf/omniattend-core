@@ -6,6 +6,7 @@ export interface Env {
   DB: any; // D1Database
   API_KEY?: string;
   ASSETS: any; // Cloudflare Assets Fetcher
+  R2: any; // Cloudflare R2 Bucket
 }
 
 // Helper: Simple SHA-256 hash for passwords
@@ -368,6 +369,41 @@ export default {
             return Response.json({ 
               error: "Failed to verify code" 
             }, { status: 500, headers: corsHeaders });
+          }
+        }
+
+        // --- R2 OBJECT STORAGE ---
+        // POST /api/files/upload
+        if (path === "/api/files/upload" && method === "POST") {
+          try {
+            const contentType = request.headers.get("content-type") || "";
+            if (contentType.includes("application/json")) {
+              const body = await request.json() as any;
+              const key = (body.key || "").toString().trim();
+              const ct = (body.contentType || "application/octet-stream").toString();
+              const dataBase64 = (body.dataBase64 || "").toString();
+              if (!key || !dataBase64) {
+                return Response.json({ error: "key and dataBase64 required" }, { status: 400, headers: corsHeaders });
+              }
+              const bin = Uint8Array.from(atob(dataBase64), c => c.charCodeAt(0));
+              await env.R2.put(key.replace(/^\/+/, ""), bin, { httpMetadata: { contentType: ct } });
+              return Response.json({ ok: true, key }, { headers: corsHeaders });
+            }
+            // Multipart upload (single file)
+            if (contentType.includes("multipart/form-data")) {
+              const form = await request.formData();
+              const file = form.get("file") as File | null;
+              const key = (form.get("key") as string || "").trim();
+              if (!file || !key) {
+                return Response.json({ error: "file and key required" }, { status: 400, headers: corsHeaders });
+              }
+              const arr = await file.arrayBuffer();
+              await env.R2.put(key.replace(/^\/+/, ""), new Uint8Array(arr), { httpMetadata: { contentType: file.type || "application/octet-stream" } });
+              return Response.json({ ok: true, key }, { headers: corsHeaders });
+            }
+            return Response.json({ error: "Unsupported Content-Type" }, { status: 415, headers: corsHeaders });
+          } catch (e: any) {
+            return Response.json({ error: "R2 upload failed" }, { status: 500, headers: corsHeaders });
           }
         }
 
