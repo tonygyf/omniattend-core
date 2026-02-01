@@ -2,6 +2,7 @@ import { AdminUser, ApiResponse } from '../types';
 
 // CONFIGURATION
 const API_BASE_URL = "https://omni.gyf123.dpdns.org";
+const API_KEY = "my-secret-api-key"; // Hardcoded for frontend usage (in production use env vars)
 
 interface AuthResponse {
   id: string;
@@ -32,7 +33,10 @@ export const loginAdmin = async (email: string, password: string): Promise<ApiRe
   try {
     const res = await fetch(`${API_BASE_URL}/api/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY 
+      },
       body: JSON.stringify({ username: email, password }),
     });
 
@@ -54,6 +58,9 @@ export const updateProfileAvatar = async (teacherId: string, file: File, key: st
     form.append('file', file);
     const res = await fetch(`${API_BASE_URL}/api/profile/avatar`, {
       method: 'POST',
+      headers: {
+        'X-API-Key': API_KEY
+      },
       body: form
     });
     const data = await res.json();
@@ -70,7 +77,10 @@ export const registerAdmin = async (email: string, password: string): Promise<Ap
   try {
     const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY
+      },
       body: JSON.stringify({ email, password }),
     });
 
@@ -93,7 +103,10 @@ export const sendEmailVerificationCode = async (email: string): Promise<ApiRespo
   try {
     const res = await fetch(`${API_BASE_URL}/api/auth/email-code/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY 
+      },
       body: JSON.stringify({ email }),
     });
 
@@ -114,7 +127,10 @@ export const verifyEmailCode = async (email: string, code: string): Promise<ApiR
   try {
     const res = await fetch(`${API_BASE_URL}/api/auth/email-code/verify`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY 
+      },
       body: JSON.stringify({ email, code }),
     });
 

@@ -5,6 +5,9 @@ compatibility_date = "2025-01-01"
 workers_dev = true
 compatibility_flags = ["nodejs_compat"]
 
+[vars]
+API_SECRET = "my-secret-api-key"
+
 # D1 数据库绑定
 [[d1_databases]]
 binding = "DB"

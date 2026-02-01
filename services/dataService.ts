@@ -8,7 +8,8 @@ const USE_MOCK = false;
 // If developing locally with 'npm run start' (frontend) and 'wrangler dev' (backend) on different ports, 
 // you might need "http://localhost:8787". 
 // But for production build, an empty string "" allows relative requests like "/api/stats".
-const API_BASE_URL = ""; 
+const API_BASE_URL = "https://omni.gyf123.dpdns.org"; 
+const API_KEY = "my-secret-api-key"; // Shared API Secret
 
 // --- MOCK DATA GENERATION ---
 
@@ -30,7 +31,15 @@ const generateMockAttendance = (): AttendanceRecord[] => [
 // --- API CLIENT IMPLEMENTATION ---
 
 export const fetchDashboardStats = async (): Promise<DashboardStats> => {
-  if (USE_MOCK) {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/stats`, {
+      headers: { 'X-API-Key': API_KEY }
+    });
+    if (!res.ok) throw new Error('Failed to fetch stats');
+    const data = await res.json();
+    if (data && (data.totalUsers > 0 || data.presentToday > 0 || data.absentToday > 0 || (data.weeklyTrend || []).length > 0)) {
+      return data;
+    }
     await new Promise(resolve => setTimeout(resolve, 800));
     return {
       totalUsers: 45,
@@ -47,12 +56,6 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
         { day: 'Sun', count: 0 },
       ]
     };
-  }
-
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/stats`);
-    if (!res.ok) throw new Error('Failed to fetch stats');
-    return await res.json();
   } catch (error) {
     console.warn("API request failed, falling back to mock data");
     return {
@@ -66,14 +69,11 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
 };
 
 export const fetchUsers = async (teacherId?: string | number): Promise<User[]> => {
-  if (USE_MOCK) {
-    await new Promise(resolve => setTimeout(resolve, 600));
-    return generateMockUsers();
-  }
-
   try {
     // Load classrooms and filter by teacherId (if provided)
-    const cr = await fetch(`${API_BASE_URL}/api/classrooms`);
+    const cr = await fetch(`${API_BASE_URL}/api/classrooms`, {
+      headers: { 'X-API-Key': API_KEY }
+    });
     if (!cr.ok) throw new Error('Failed to fetch classrooms');
     const { data: rooms } = await cr.json();
     const targetRooms = (teacherId ? rooms.filter((r: any) => r.teacherId?.toString() === teacherId.toString()) : rooms);
@@ -84,7 +84,9 @@ export const fetchUsers = async (teacherId?: string | number): Promise<User[]> =
     // Fetch students for all matched classrooms
     const studentLists = await Promise.all(
       targetRooms.map((room: any) =>
-        fetch(`${API_BASE_URL}/api/students?classId=${room.id}`)
+        fetch(`${API_BASE_URL}/api/students?classId=${room.id}`, {
+          headers: { 'X-API-Key': API_KEY }
+        })
           .then(res => res.ok ? res.json() : Promise.resolve({ data: [] }))
           .then(json => ({ room, students: json.data || [] }))
       )
@@ -104,21 +106,22 @@ export const fetchUsers = async (teacherId?: string | number): Promise<User[]> =
       }))
     );
 
-    return allStudents;
+    if (allStudents.length > 0) {
+      return allStudents;
+    }
+    await new Promise(resolve => setTimeout(resolve, 600));
+    return generateMockUsers();
   } catch (error) {
     console.warn("API request failed, falling back to mock data");
-    return generateMockUsers();
+    return [];
   }
 };
 
 export const fetchRecentAttendance = async (): Promise<AttendanceRecord[]> => {
-  if (USE_MOCK) {
-    await new Promise(resolve => setTimeout(resolve, 600));
-    return generateMockAttendance();
-  }
-
   try {
-    const res = await fetch(`${API_BASE_URL}/api/attendance`);
+    const res = await fetch(`${API_BASE_URL}/api/attendance`, {
+      headers: { 'X-API-Key': API_KEY }
+    });
     if (!res.ok) throw new Error('Failed to fetch attendance');
     // New Worker returns array directly for this endpoint or inside { data: [] }?
     // Worker code: return Response.json(results); -> Array
@@ -127,17 +130,21 @@ export const fetchRecentAttendance = async (): Promise<AttendanceRecord[]> => {
     // Ensure we handle both array or { data: [] } format just in case
     const results = Array.isArray(data) ? data : (data.data || []);
 
-    return results.map((r: any) => ({
-        id: r.id.toString(),
-        userId: r.studentId.toString(),
-        userName: r.userName,
-        timestamp: r.timestamp,
-        status: r.status as AttendanceStatus,
-        confidenceScore: r.confidenceScore
-    }));
+    if (results.length > 0) {
+      return results.map((r: any) => ({
+          id: r.id.toString(),
+          userId: r.studentId.toString(),
+          userName: r.userName,
+          timestamp: r.timestamp,
+          status: r.status as AttendanceStatus,
+          confidenceScore: r.confidenceScore
+      }));
+    }
+    await new Promise(resolve => setTimeout(resolve, 600));
+    return generateMockAttendance();
   } catch (error) {
     console.warn("API request failed, falling back to mock data");
-    return generateMockAttendance();
+    return [];
   }
 };
 

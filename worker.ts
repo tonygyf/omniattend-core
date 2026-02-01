@@ -5,6 +5,7 @@
 export interface Env {
   DB: any; // D1Database
   API_KEY?: string;
+  API_SECRET?: string; // API Secret Key for Auth
   ASSETS: any; // Cloudflare Assets Fetcher
   R2: any; // Cloudflare R2 Bucket
 }
@@ -53,7 +54,7 @@ export default {
     const corsHeaders = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, HEAD, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-Key",
     };
 
     if (method === "OPTIONS") {
@@ -65,6 +66,15 @@ export default {
       // API ROUTES (/api/*)
       // ===========================
       if (path.startsWith("/api/")) {
+
+        // --- AUTHENTICATION CHECK ---
+        // Verify X-API-Key header if API_SECRET is set in environment
+        if (env.API_SECRET) {
+           const apiKey = request.headers.get("X-API-Key");
+           if (apiKey !== env.API_SECRET) {
+              return Response.json({ error: "Unauthorized: Invalid API Key" }, { status: 401, headers: corsHeaders });
+           }
+        }
 
         // --- SYSTEM ROUTES ---
 
@@ -569,6 +579,109 @@ export default {
              .bind(body.studentId, body.modelVer, vector, body.quality).run();
              
            return Response.json({ ok: true, id: res.meta.last_row_id }, { status: 201, headers: corsHeaders });
+        }
+
+        // --- SYNC MODULE (Android App) ---
+
+        // GET /api/sync/download?teacherId=<id>
+        // Returns all Classrooms, Students, FaceEmbeddings, and recent Attendance history for a teacher
+        if (path === "/api/sync/download" && method === "GET") {
+          const teacherId = url.searchParams.get("teacherId");
+          if (!teacherId) return Response.json({ error: "teacherId required" }, { status: 400, headers: corsHeaders });
+
+          // 1. Get Classrooms
+          const { results: classrooms } = await env.DB.prepare("SELECT * FROM Classroom WHERE teacherId = ?").bind(teacherId).all();
+          const classIds = classrooms.map((c: any) => c.id);
+
+          if (classIds.length === 0) {
+             return Response.json({ 
+               classrooms: [], students: [], embeddings: [], sessions: [], results: [] 
+             }, { headers: corsHeaders });
+          }
+
+          // 2. Get Students (in those classes)
+          // D1 doesn't support "IN (?)" with array directly well, so we iterate or construct query string
+          // For safety and simplicity with small number of classes, we can fetch all students and filter in code, 
+          // or use multiple queries. Given D1 limit, query construction is better if list is small.
+          // Let's assume reasonable number of classes.
+          const placeholders = classIds.map(() => '?').join(',');
+          const studentsQuery = `SELECT * FROM Student WHERE classId IN (${placeholders})`;
+          const { results: students } = await env.DB.prepare(studentsQuery).bind(...classIds).all();
+          
+          const studentIds = students.map((s: any) => s.id);
+
+          // 3. Get FaceEmbeddings
+          let embeddings: any[] = [];
+          if (studentIds.length > 0) {
+            const sPlaceholders = studentIds.map(() => '?').join(',');
+            // Chunking might be needed for very large lists, but assuming manageable size for demo
+            const embedQuery = `SELECT * FROM FaceEmbedding WHERE studentId IN (${sPlaceholders})`;
+            const { results } = await env.DB.prepare(embedQuery).bind(...studentIds).all();
+            embeddings = results;
+          }
+
+          // 4. Get Recent AttendanceSessions (e.g., last 30 days)
+          const sessionQuery = `SELECT * FROM AttendanceSession WHERE classId IN (${placeholders}) AND startedAt > datetime('now', '-30 days') ORDER BY startedAt DESC`;
+          const { results: sessions } = await env.DB.prepare(sessionQuery).bind(...classIds).all();
+          
+          const sessionIds = sessions.map((s: any) => s.id);
+
+          // 5. Get AttendanceResults for those sessions
+          let attendanceResults: any[] = [];
+          if (sessionIds.length > 0) {
+             const sessPlaceholders = sessionIds.map(() => '?').join(',');
+             const resQuery = `SELECT * FROM AttendanceResult WHERE sessionId IN (${sessPlaceholders})`;
+             const { results } = await env.DB.prepare(resQuery).bind(...sessionIds).all();
+             attendanceResults = results;
+          }
+
+          return Response.json({
+            classrooms,
+            students,
+            embeddings,
+            sessions,
+            results: attendanceResults
+          }, { headers: corsHeaders });
+        }
+
+        // POST /api/sync/upload
+        // Uploads local attendance sessions and results
+        // Payload: { teacherId: 1, sessions: [ { ..., results: [] } ] }
+        if (path === "/api/sync/upload" && method === "POST") {
+           const body = await request.json() as any;
+           if (!body.sessions || !Array.isArray(body.sessions)) {
+              return Response.json({ error: "Invalid payload: sessions array required" }, { status: 400, headers: corsHeaders });
+           }
+
+           const resultsLog: any[] = [];
+
+           // Process each session
+           for (const session of body.sessions) {
+              // 1. Insert Session
+              const resSession = await env.DB.prepare(
+                "INSERT INTO AttendanceSession (classId, startedAt, location, note) VALUES (?, ?, ?, ?)"
+              ).bind(session.classId, session.startedAt, session.location, session.note).run();
+              
+              const newSessionId = resSession.meta.last_row_id;
+              resultsLog.push({ localStartedAt: session.startedAt, newSessionId });
+
+              // 2. Insert Results for this session
+              if (session.results && Array.isArray(session.results)) {
+                 const stmt = env.DB.prepare(
+                   "INSERT INTO AttendanceResult (sessionId, studentId, status, score, decidedBy, decidedAt) VALUES (?, ?, ?, ?, ?, ?)"
+                 );
+                 const batch = session.results.map((r: any) => 
+                   stmt.bind(newSessionId, r.studentId, r.status, r.score, r.decidedBy, r.decidedAt)
+                 );
+                 await env.DB.batch(batch);
+              }
+           }
+
+           return Response.json({ 
+             success: true, 
+             processedSessions: resultsLog.length,
+             details: resultsLog 
+           }, { headers: corsHeaders });
         }
 
         return new Response("API Not Found", { status: 404, headers: corsHeaders });
