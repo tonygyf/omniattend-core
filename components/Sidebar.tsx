@@ -29,6 +29,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
   const [editAvatar, setEditAvatar] = React.useState('');
   const [avatarFile, setAvatarFile] = React.useState<File | null>(null);
   const [uploading, setUploading] = React.useState(false);
+  const [avatarPreview, setAvatarPreview] = React.useState('');
+  const [avatarError, setAvatarError] = React.useState('');
 
   React.useEffect(() => {
     if (editOpen) {
@@ -36,8 +38,22 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
       setEditEmail(user?.email || (user as any)?.username || '');
       const existing = ((user as any)?.avatarUri || (user as any)?.avatarUrl || '') as string;
       setEditAvatar(existing);
+      setAvatarFile(null);
+      setAvatarPreview('');
+      setAvatarError('');
     }
   }, [editOpen, user]);
+  React.useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview('');
+      return;
+    }
+    const url = URL.createObjectURL(avatarFile);
+    setAvatarPreview(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [avatarFile]);
   const remembered = (() => {
     try {
       return !!localStorage.getItem('facecheck_admin_credentials');
@@ -204,10 +220,22 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
               onChange={(e) => setAvatarFile(e.target.files?.[0] || null)}
               className="w-full"
             />
+            {avatarPreview && (
+              <div className="mt-2">
+                <img
+                  src={avatarPreview}
+                  alt="avatar preview"
+                  className="w-20 h-20 rounded-full object-cover border border-slate-200 dark:border-slate-700"
+                />
+              </div>
+            )}
             <div className="mt-2 text-xs text-slate-500 dark:text-slate-400">
               建议命名：avatars/teacher-{String(user?.id || 'me')}.jpg
             </div>
           </div>
+          {avatarError && (
+            <div className="text-sm text-red-500">{avatarError}</div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button
               onClick={() => setEditOpen(false)}
@@ -219,10 +247,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
               disabled={!avatarFile || uploading}
               onClick={async () => {
                 if (!user || !avatarFile) return;
+                setAvatarError('');
                 setUploading(true);
                 const type = avatarFile.type || 'image/jpeg';
                 const ext = type.includes('png') ? 'png' : type.includes('jpeg') ? 'jpg' : type.includes('jpg') ? 'jpg' : 'bin';
-                const suggestedKey = (editAvatar || `avatars/teacher-${String(user.id)}.${ext}`).replace(/^\/+/, '');
+                const rawKey = editAvatar || `avatars/teacher-${String(user.id)}.${ext}`;
+                const suggestedKey = rawKey.startsWith('http')
+                  ? rawKey.replace(/^https?:\/\/files\.gyf123\.dpdns\.org\/+/i, '')
+                  : rawKey.replace(/^\/+/, '');
                 const res = await updateProfileAvatar(String(user.id), avatarFile, suggestedKey);
                 setUploading(false);
                 if (res.success && res.data) {
@@ -230,6 +262,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
                   updated.avatarUri = res.data.avatarUri;
                   login(updated);
                   setEditAvatar(res.data.avatarUri);
+                  setAvatarFile(null);
+                  setAvatarPreview('');
+                } else {
+                  setAvatarError(res.error || '头像上传失败');
                 }
               }}
               className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-60"

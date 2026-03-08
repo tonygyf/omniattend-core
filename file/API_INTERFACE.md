@@ -12,6 +12,18 @@ All requests must include the API Key header:
 
 ---
 
+## 已完成
+
+- 同步接口文档与 Android 对齐
+- 头像上传接口已实现并可用
+
+## 待完成
+
+- 登录与邮箱验证码接口补充示例
+- 账号注册与权限策略说明
+ 
+---
+
 ## 1. Download Sync Data (Pull)
 Fetch all necessary data for the teacher's device after login. This includes Classrooms, Students, Face Embeddings, and recent Attendance History.
 
