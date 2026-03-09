@@ -8,6 +8,7 @@ import {
   Tooltip, 
   ResponsiveContainer 
 } from 'recharts';
+import { motion, Variants } from 'framer-motion';
 import { Users, UserCheck, Clock, UserX, RefreshCw } from 'lucide-react';
 import { fetchDashboardStats, syncDataWithCloudflare } from '../services/dataService';
 import { DashboardStats } from '../types';
@@ -63,42 +64,55 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard 
-          title="学生总数" 
-          value={stats.totalUsers} 
-          icon={Users} 
-          color="bg-blue-500" 
-          trend="本周 +2"
-        />
-        <StatCard 
-          title="今日到勤" 
-          value={stats.presentToday} 
-          icon={UserCheck} 
-          color="bg-green-500" 
-          trend="到勤率 84%"
-        />
-        <StatCard 
-          title="今日迟到" 
-          value={stats.lateToday} 
-          icon={Clock} 
-          color="bg-amber-500" 
-          trend="较昨日 -2"
-        />
-        <StatCard 
-          title="今日缺勤" 
-          value={stats.absentToday} 
-          icon={UserX} 
-          color="bg-red-500" 
-          trend="需要关注"
-        />
-      </div>
+      <motion.div 
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+      >
+        <motion.div variants={itemVariants}>
+          <StatCard 
+            title="学生总数" 
+            value={stats.totalUsers} 
+            icon={Users} 
+            variant="blue"
+            trend="本周 +2"
+          />
+        </motion.div>
+        <motion.div variants={itemVariants}>
+          <StatCard 
+            title="今日到勤" 
+            value={stats.presentToday} 
+            icon={UserCheck} 
+            variant="green"
+            trend="到勤率 84%"
+          />
+        </motion.div>
+        <motion.div variants={itemVariants}>
+          <StatCard 
+            title="今日迟到" 
+            value={stats.lateToday} 
+            icon={Clock} 
+            variant="amber"
+            trend="较昨日 -2"
+          />
+        </motion.div>
+        <motion.div variants={itemVariants}>
+          <StatCard 
+            title="今日缺勤" 
+            value={stats.absentToday} 
+            icon={UserX} 
+            variant="red"
+            trend="需要关注"
+          />
+        </motion.div>
+      </motion.div>
 
       {/* Main Chart Section */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
         <h2 className="text-lg font-semibold text-slate-800 mb-6">近 7 日考勤趋势</h2>
         <div className="h-80 w-full">
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 400, height: 300 }}>
             <BarChart data={stats.weeklyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
               <XAxis 
@@ -135,21 +149,67 @@ interface StatCardProps {
   title: string;
   value: number;
   icon: any;
-  color: string;
+  variant: 'blue' | 'green' | 'amber' | 'red';
   trend?: string;
 }
 
-const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, color, trend }) => (
-  <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start justify-between hover:shadow-md transition-shadow">
-    <div>
-      <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
-      <h3 className="text-3xl font-bold text-slate-800">{value}</h3>
-      {trend && <p className="text-xs text-slate-400 mt-2">{trend}</p>}
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.1,
+      delayChildren: 0.2,
+    },
+  },
+};
+
+const itemVariants: Variants = {
+  hidden: { y: 20, opacity: 0 },
+  visible: {
+    y: 0,
+    opacity: 1,
+    transition: {
+      type: 'spring',
+      stiffness: 120,
+    },
+  },
+};
+
+const StatCard: React.FC<StatCardProps> = ({ title, value, icon: Icon, variant, trend }) => {
+  const variants = {
+    blue: {
+      bg: 'bg-blue-100',
+      text: 'text-blue-600',
+    },
+    green: {
+      bg: 'bg-green-100',
+      text: 'text-green-600',
+    },
+    amber: {
+      bg: 'bg-amber-100',
+      text: 'text-amber-600',
+    },
+    red: {
+      bg: 'bg-red-100',
+      text: 'text-red-600',
+    },
+  };
+
+  const selectedVariant = variants[variant];
+
+  return (
+    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start justify-between hover:shadow-md transition-shadow">
+      <div>
+        <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
+        <h3 className="text-3xl font-bold text-slate-800">{value}</h3>
+        {trend && <p className="text-xs text-slate-400 mt-2">{trend}</p>}
+      </div>
+      <div className={`p-3 rounded-xl ${selectedVariant.bg}`}>
+        <Icon className={`w-6 h-6 ${selectedVariant.text}`} />
+      </div>
     </div>
-    <div className={`p-3 rounded-xl ${color} bg-opacity-10`}>
-      <Icon className={`w-6 h-6 ${color.replace('bg-', 'text-')}`} />
-    </div>
-  </div>
-);
+  );
+};
 
 export default Dashboard;

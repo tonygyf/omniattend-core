@@ -1,96 +1,162 @@
-import React, { useState } from 'react';
-import { fetchDashboardStats, fetchRecentAttendance } from '../services/dataService';
+import React, { useEffect, useState, useMemo } from 'react';
+import { fetchAttendanceAnalysis } from '../services/dataService';
 import { generateAttendanceInsights } from '../services/geminiService';
-import { Sparkles, Bot, ArrowRight, Loader2 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown'; // Actually, let's keep it simple without extra deps if possible, but for markdown response rendering simple text is fine or minimal custom render. I'll use simple formatting.
+import { StudentAttendanceAnalysis } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { Loader2, AlertTriangle, ArrowUpDown, Sparkles, Bot, ArrowRight } from 'lucide-react';
+import { motion } from 'framer-motion';
 
-const AiInsights: React.FC = () => {
-  const [insight, setInsight] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
+type SortKey = keyof StudentAttendanceAnalysis | 'attendanceRate';
 
-  const handleGenerate = async () => {
-    setGenerating(true);
+const AiInsightsPage: React.FC = () => {
+  const [analysis, setAnalysis] = useState<StudentAttendanceAnalysis[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({ key: 'absentCount', direction: 'desc' });
+  const auth = useAuth();
+
+  useEffect(() => {
+    if (auth.user?.id) {
+      loadAnalysis(auth.user.id);
+    }
+  }, [auth.user]);
+
+  const loadAnalysis = async (teacherId: number) => {
+    setLoading(true);
+    setError(null);
     try {
-      // 1. Fetch current data
-      const [stats, recent] = await Promise.all([
-        fetchDashboardStats(),
-        fetchRecentAttendance()
-      ]);
-
-      // 2. Call Gemini
-      const text = await generateAttendanceInsights(stats, recent);
-      setInsight(text);
-    } catch (e) {
-      setInsight("Failed to connect to AI service.");
+      const data = await fetchAttendanceAnalysis(teacherId);
+      setAnalysis(data);
+    } catch (err) {
+      setError('无法加载考勤分析数据，请稍后重试。');
+      console.error(err);
     } finally {
-      setGenerating(false);
+      setLoading(false);
     }
   };
 
+  const sortedAnalysis = useMemo(() => {
+    let sortableItems = [...analysis];
+    sortableItems.sort((a, b) => {
+      const aValue = sortConfig.key === 'attendanceRate' ? (a.presentCount / a.totalSessions) : a[sortConfig.key as keyof StudentAttendanceAnalysis];
+      const bValue = sortConfig.key === 'attendanceRate' ? (b.presentCount / b.totalSessions) : b[sortConfig.key as keyof StudentAttendanceAnalysis];
+
+      if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return sortableItems;
+  }, [analysis, sortConfig]);
+
+  const requestSort = (key: SortKey) => {
+    let direction: 'asc' | 'desc' = 'desc';
+    if (sortConfig.key === key && sortConfig.direction === 'desc') {
+      direction = 'asc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const atRiskStudents = useMemo(() => {
+    return analysis.filter(s => s.absentCount > 3 || s.lateCount > 5);
+  }, [analysis]);
+
   return (
-    <div className="max-w-4xl mx-auto space-y-8">
-      <div className="text-center space-y-4">
+    <div className="space-y-8">
+      {/* Header */}
+      <div className="text-center">
         <div className="inline-flex items-center justify-center p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-lg mb-2">
           <Sparkles className="text-white w-8 h-8" />
         </div>
         <h1 className="text-3xl font-bold text-slate-900">智能考勤洞察</h1>
-        <p className="text-slate-500 max-w-xl mx-auto">
-          使用 Gemini AI 分析考勤趋势，识别置信度异常，优化准点率。
-        </p>
+        <p className="text-slate-500 mt-1 max-w-xl mx-auto">基于历史数据，自动识别考勤模式与风险学生。</p>
       </div>
 
-      {!insight && !generating && (
-        <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-100 text-center">
-            <div className="max-w-md mx-auto space-y-6">
-                <Bot className="w-16 h-16 text-indigo-200 mx-auto" />
-                <h3 className="text-xl font-semibold text-slate-800">准备生成分析报告</h3>
-                <p className="text-slate-500">
-                    我们将提交统计数据与最近日志的元信息给 Google Gemini，以生成健康度报告。
-                </p>
-                <button 
-                    onClick={handleGenerate}
-                    className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2"
-                >
-                    生成报告 <ArrowRight size={20}/>
-                </button>
-            </div>
+      {/* At-Risk Summary */}
+      <motion.div 
+        className="bg-amber-50 border-l-4 border-amber-400 p-6 rounded-r-lg shadow-sm"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+      >
+        <div className="flex items-start gap-4">
+          <AlertTriangle className="w-8 h-8 text-amber-500 mt-1 flex-shrink-0" />
+          <div>
+            <h2 className="text-xl font-semibold text-amber-900">高风险学生识别</h2>
+            <p className="text-amber-800 mt-1">
+              {loading ? '正在分析...' : `发现 ${atRiskStudents.length} 名学生存在显著的缺勤或频繁迟到模式。建议重点关注。`}
+            </p>
+          </div>
         </div>
-      )}
+      </motion.div>
 
-      {generating && (
-         <div className="bg-white rounded-3xl p-12 shadow-sm border border-slate-100 flex flex-col items-center justify-center space-y-4 min-h-[400px]">
-            <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
-            <p className="text-slate-600 font-medium">正在调用 Gemini...</p>
-            <p className="text-slate-400 text-sm">分析置信度与时间戳</p>
-         </div>
-      )}
-
-      {insight && !generating && (
-        <div className="bg-white rounded-3xl overflow-hidden shadow-lg border border-slate-100 animate-fade-in">
-            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-6 flex justify-between items-center">
-                <h2 className="text-white font-bold text-lg flex items-center gap-2">
-                    <Sparkles size={20} className="text-yellow-300"/> AI 分析报告
-                </h2>
-                <button 
-                    onClick={handleGenerate} 
-                    className="text-indigo-100 hover:text-white text-sm font-medium underline"
-                >
-                    刷新
-                </button>
-            </div>
-            <div className="p-8 prose prose-slate max-w-none text-slate-700">
-                {/* Simple whitespace handling for the text response */}
-                <div className="whitespace-pre-wrap leading-relaxed">
-                    {insight}
-                </div>
-            </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-100 text-center">
-                <p className="text-xs text-slate-400">由 Gemini-3-flash-preview 生成。可在本地日志中查看验证信息。</p>
-            </div>
+      {/* Full Analysis Table */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="p-6 border-b">
+          <h2 className="text-xl font-semibold text-slate-800">全体学生考勤分析</h2>
         </div>
-      )}
+        {loading ? (
+          <div className="flex h-60 items-center justify-center text-slate-500"><Loader2 className="w-6 h-6 animate-spin mr-2" /> 正在加载数据...</div>
+        ) : error ? (
+          <div className="flex h-60 items-center justify-center text-red-500"><AlertTriangle className="w-6 h-6 mr-2" /> {error}</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="px-6 py-4 font-semibold">学生</th>
+                  <th className="px-6 py-4 font-semibold cursor-pointer flex items-center gap-1" onClick={() => requestSort('totalSessions')}>总次数 <ArrowUpDown size={14}/></th>
+                  <th className="px-6 py-4 font-semibold cursor-pointer flex items-center gap-1" onClick={() => requestSort('presentCount')}>出勤 <ArrowUpDown size={14}/></th>
+                  <th className="px-6 py-4 font-semibold cursor-pointer flex items-center gap-1" onClick={() => requestSort('lateCount')}>迟到 <ArrowUpDown size={14}/></th>
+                  <th className="px-6 py-4 font-semibold cursor-pointer flex items-center gap-1" onClick={() => requestSort('absentCount')}>缺勤 <ArrowUpDown size={14}/></th>
+                  <th className="px-6 py-4 font-semibold cursor-pointer flex items-center gap-1" onClick={() => requestSort('attendanceRate')}>出勤率 <ArrowUpDown size={14}/></th>
+                </tr>
+              </thead>
+              <motion.tbody 
+                className="divide-y divide-slate-100"
+                initial="hidden"
+                animate="visible"
+                variants={{ visible: { transition: { staggerChildren: 0.03 } } }}
+              >
+                {sortedAnalysis.map(student => {
+                  const attendanceRate = student.totalSessions > 0 ? (student.presentCount / student.totalSessions) * 100 : 0;
+                  const isAtRisk = student.absentCount > 3 || student.lateCount > 5;
+                  return (
+                    <motion.tr 
+                      key={student.studentId} 
+                      className={`hover:bg-slate-50 ${isAtRisk ? 'bg-red-50/50' : ''}`}
+                      variants={{ hidden: { opacity: 0, y: 10 }, visible: { opacity: 1, y: 0 } }}
+                    >
+                      <td className="px-6 py-4 font-medium text-slate-800">
+                        <div className="flex flex-col">
+                          <span>{student.studentName}</span>
+                          <span className="text-xs text-slate-500 font-mono">{student.studentSid}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 font-mono text-center">{student.totalSessions}</td>
+                      <td className="px-6 py-4 font-mono text-center text-green-600">{student.presentCount}</td>
+                      <td className="px-6 py-4 font-mono text-center text-amber-600">{student.lateCount}</td>
+                      <td className="px-6 py-4 font-mono text-center text-red-600 font-bold">{student.absentCount}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-full bg-slate-200 rounded-full h-2.5">
+                            <div 
+                              className={`h-2.5 rounded-full ${attendanceRate > 80 ? 'bg-green-500' : attendanceRate > 60 ? 'bg-amber-500' : 'bg-red-500'}`}
+                              style={{ width: `${attendanceRate}%` }}
+                            ></div>
+                          </div>
+                          <span className="font-mono text-xs">{attendanceRate.toFixed(0)}%</span>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  );
+                })}
+              </motion.tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
 
-export default AiInsights;
+export default AiInsightsPage;

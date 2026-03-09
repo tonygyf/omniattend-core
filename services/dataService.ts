@@ -7,7 +7,8 @@ import {
   CheckinSubmission,
   CreateCheckinTaskRequest,
   CheckinSubmissionRequest,
-  ReviewSubmissionRequest
+  ReviewSubmissionRequest,
+  StudentAttendanceAnalysis
 } from '../types';
 
 /* =====================
@@ -265,6 +266,19 @@ export const createCheckinTask = async (task: CreateCheckinTaskRequest): Promise
   }
 };
 
+// ===== AI INSIGHTS =====
+
+export const fetchAttendanceAnalysis = async (teacherId: number): Promise<StudentAttendanceAnalysis[]> => {
+  try {
+    const url = `${API_BASE_URL}/api/insights/attendance-summary?teacherId=${teacherId}`;
+    const { data } = await safeFetchJSON<any>(url);
+    return data || [];
+  } catch (e) {
+    console.warn('Failed to fetch attendance analysis', e);
+    return [];
+  }
+};
+
 export const closeCheckinTask = async (taskId: number): Promise<{ success: boolean; error?: string }> => {
   try {
     const res = await fetch(`${API_BASE_URL}/api/checkin/tasks/${taskId}/close`, {
@@ -285,7 +299,7 @@ export const closeCheckinTask = async (taskId: number): Promise<{ success: boole
 
 export const submitCheckin = async (submission: CheckinSubmissionRequest): Promise<{ success: boolean; data?: any; error?: string }> => {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/checkin/submit`, {
+    const res = await fetch(`${API_BASE_URL}/api/checkin/tasks/${submission.taskId}/submit`, { // Corrected URL
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -301,6 +315,50 @@ export const submitCheckin = async (submission: CheckinSubmissionRequest): Promi
     return { success: true, data: data.data };
   } catch (e) {
     console.error('Submit checkin error:', e);
+    return { success: false, error: '网络错误' };
+  }
+};
+
+export const fetchCheckinTaskDetails = async (taskId: number): Promise<any> => {
+  try {
+    const url = `${API_BASE_URL}/api/checkin/tasks/${taskId}/current-users`;
+    const { data } = await safeFetchJSON<any>(url);
+    return data || { summary: {}, users: [] };
+  } catch (e) {
+    console.warn(`Failed to fetch details for task ${taskId}`, e);
+    return { summary: {}, users: [] };
+  }
+};
+
+export const fetchReviewQueue = async (taskId: number): Promise<CheckinSubmission[]> => {
+  try {
+    const url = `${API_BASE_URL}/api/checkin/tasks/${taskId}/review-queue`;
+    const { data } = await safeFetchJSON<any>(url);
+    return data || [];
+  } catch (e) {
+    console.warn(`Failed to fetch review queue for task ${taskId}`, e);
+    return [];
+  }
+};
+
+export const reviewSubmission = async (submissionId: number, review: ReviewSubmissionRequest): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/checkin/submissions/${submissionId}/review`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY
+      },
+      body: JSON.stringify(review)
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || '审核失败' };
+    }
+    return { success: true };
+  } catch (e) {
+    console.error(`Review submission ${submissionId} error:`, e);
     return { success: false, error: '网络错误' };
   }
 };

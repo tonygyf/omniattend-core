@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { loginAdmin, sendEmailVerificationCode, verifyEmailCode } from '../services/authService';
 import { Lock, Mail, Loader2, ArrowRight, Zap, Clock, Eye, EyeOff } from 'lucide-react';
@@ -19,7 +19,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [remember, setRemember] = useState(false);
-  React.useEffect(() => {
+  useEffect(() => {
     try {
       const saved = localStorage.getItem('facecheck_admin_credentials');
       if (saved) {
@@ -50,7 +50,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
 
     const res = await loginAdmin(e, p);
     if (res.success && res.data) {
-      login(res.data);
+      login({ ...res.data, id: Number(res.data.id) });
       if (remember) {
         try {
           localStorage.setItem('facecheck_admin_credentials', JSON.stringify({ email: e, password: p }));
@@ -105,7 +105,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
 
     const res = await verifyEmailCode(codeEmail, verificationCode);
     if (res.success && res.data) {
-      login(res.data);
+      login({ ...res.data, id: Number(res.data.id) });
     } else {
       setCodeError(res.error || 'Invalid verification code');
       setCodeLoading(false);

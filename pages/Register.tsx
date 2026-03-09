@@ -35,7 +35,7 @@ const Register: React.FC<RegisterProps> = ({ onNavigateLogin }) => {
     if (res.success && res.data) {
       // Auto login after register
       // Note: In real app, might want email verification first
-      login({ ...res.data, token: 'temp-token' }); 
+      login({ ...res.data, id: Number(res.data.id), token: 'temp-token' }); 
     } else {
       setError(res.error || 'Registration failed');
     }

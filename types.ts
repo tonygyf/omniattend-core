@@ -1,8 +1,8 @@
 export enum AttendanceStatus {
-  PRESENT = 'PRESENT',
-  LATE = 'LATE',
-  ABSENT = 'ABSENT',
-  EXCUSED = 'EXCUSED'
+  PRESENT = 'Present', // Consistent with backend
+  LATE = 'Late', // Consistent with backend
+  ABSENT = 'Absent', // Consistent with backend
+  UNKNOWN = 'Unknown', // Consistent with backend
 }
 
 export interface User {
@@ -18,10 +18,11 @@ export interface User {
 }
 
 export interface AdminUser {
-  id: string;
+  id: number; // Use number for ID from D1
   username: string;
   name: string;
   email?: string;
+  avatarUri?: string;
   token?: string;
 }
 
@@ -87,6 +88,13 @@ export enum CheckinSubmissionStatus {
   REJECTED = 'REJECTED'
 }
 
+export enum CurrentUserStatus {
+  APPROVED = 'APPROVED',
+  PENDING_REVIEW = 'PENDING_REVIEW',
+  REJECTED = 'REJECTED',
+  NOT_SUBMITTED = 'NOT_SUBMITTED',
+}
+
 export enum AutoCheckResult {
   PASS = 'PASS',
   FAIL = 'FAIL'
@@ -112,6 +120,8 @@ export interface CheckinSubmission {
   id: number;
   taskId: number;
   studentId: number;
+  studentName?: string; // Joined from Student table
+  studentSid?: string; // Joined from Student table
   submittedAt: string;
   lat?: number;
   lng?: number;
@@ -128,14 +138,16 @@ export interface CheckinSubmission {
 
 export interface CreateCheckinTaskRequest {
   classId: number;
+  teacherId: number; // Added teacherId
   title: string;
   startAt: string;
   endAt: string;
-  locationLat?: number;
-  locationLng?: number;
-  locationRadiusM?: number;
-  gestureSequence?: string;
-  passwordPlain?: string;
+  status?: CheckinTaskStatus;
+  locationLat?: number | null;
+  locationLng?: number | null;
+  locationRadiusM?: number | null;
+  gestureSequence?: string | null;
+  passwordPlain?: string | null;
 }
 
 export interface CheckinSubmissionRequest {
@@ -150,13 +162,38 @@ export interface CheckinSubmissionRequest {
 export interface ReviewSubmissionRequest {
   action: 'approve' | 'reject';
   note?: string;
+  reviewerId: number; // Reviewer ID is required
+  markAsLate?: boolean;
 }
 
-export interface CurrentUserItem {
+export interface CurrentUser {
+  studentId: number;
+  name: string;
+  sid: string;
+  status: CurrentUserStatus;
+  submittedAt: string | null;
+  reason: string | null;
+}
+
+export interface CheckinTaskDetails {
+  summary: {
+    total: number;
+    signedIn: number;
+    pendingReview: number;
+    rejected: number;
+    notSubmitted: number;
+  };
+  users: CurrentUser[];
+}
+
+// ===== AI Insights =====
+export interface StudentAttendanceAnalysis {
   studentId: number;
   studentName: string;
-  status: 'signed' | 'pending' | 'exception' | 'not_signed';
-  submittedAt?: string;
-  reason?: string;
-  finalResult?: CheckinSubmissionStatus;
+  studentSid: string;
+  className: string;
+  totalSessions: number;
+  presentCount: number;
+  lateCount: number;
+  absentCount: number;
 }
