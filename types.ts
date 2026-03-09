@@ -73,3 +73,90 @@ export interface VerifyCodeRequest {
   email: string;
   code: string;
 }
+
+// ===== Checkin Task System =====
+export enum CheckinTaskStatus {
+  DRAFT = 'DRAFT',
+  ACTIVE = 'ACTIVE',
+  CLOSED = 'CLOSED'
+}
+
+export enum CheckinSubmissionStatus {
+  APPROVED = 'APPROVED',
+  PENDING_REVIEW = 'PENDING_REVIEW',
+  REJECTED = 'REJECTED'
+}
+
+export enum AutoCheckResult {
+  PASS = 'PASS',
+  FAIL = 'FAIL'
+}
+
+export interface CheckinTask {
+  id: number;
+  classId: number;
+  teacherId: number;
+  title: string;
+  startAt: string;
+  endAt: string;
+  status: CheckinTaskStatus;
+  locationLat?: number;
+  locationLng?: number;
+  locationRadiusM?: number;
+  gestureSequence?: string;
+  passwordPlain?: string;
+  createdAt: string;
+}
+
+export interface CheckinSubmission {
+  id: number;
+  taskId: number;
+  studentId: number;
+  submittedAt: string;
+  lat?: number;
+  lng?: number;
+  gestureInput?: string;
+  passwordInput?: string;
+  autoResult: AutoCheckResult;
+  manualResult?: 'APPROVED' | 'REJECTED';
+  finalResult: CheckinSubmissionStatus;
+  reason?: string;
+  isLatest: number;
+  reviewerId?: number;
+  reviewedAt?: string;
+}
+
+export interface CreateCheckinTaskRequest {
+  classId: number;
+  title: string;
+  startAt: string;
+  endAt: string;
+  locationLat?: number;
+  locationLng?: number;
+  locationRadiusM?: number;
+  gestureSequence?: string;
+  passwordPlain?: string;
+}
+
+export interface CheckinSubmissionRequest {
+  taskId: number;
+  studentId: number;
+  passwordInput?: string;
+  gestureInput?: string;
+  lat?: number;
+  lng?: number;
+}
+
+export interface ReviewSubmissionRequest {
+  action: 'approve' | 'reject';
+  note?: string;
+}
+
+export interface CurrentUserItem {
+  studentId: number;
+  studentName: string;
+  status: 'signed' | 'pending' | 'exception' | 'not_signed';
+  submittedAt?: string;
+  reason?: string;
+  finalResult?: CheckinSubmissionStatus;
+}

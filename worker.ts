@@ -175,38 +175,50 @@ export default {
                 return Response.json({ error: "teacherId, file, key required" }, { status: 400, headers: corsHeaders });
               }
               ct = file.type || "image/jpeg";
+              
+              // 文件大小检查（限制5MB）
+              if (file.size > 5 * 1024 * 1024) {
+                return Response.json({ error: "文件大小不能超过5MB" }, { status: 413, headers: corsHeaders });
+              }
+              
               const arr = await file.arrayBuffer();
               bin = new Uint8Array(arr);
             } else {
               return Response.json({ error: "Unsupported Content-Type" }, { status: 415, headers: corsHeaders });
             }
             
-            // Put to R2 with content type
+            // 并行处理：同时上传R2和更新数据库
             const cleanKey = key!.replace(/^\/+/, "");
-            await env.R2.put(cleanKey, bin!, { httpMetadata: { contentType: ct } });
             
-            // Update Teacher avatarUri
-            await env.DB.prepare("UPDATE Teacher SET avatarUri = ? WHERE id = ?")
-              .bind(cleanKey, teacherId!)
-              .run();
+            const [r2Result, dbResult] = await Promise.allSettled([
+              // 上传到R2
+              env.R2.put(cleanKey, bin!, { httpMetadata: { contentType: ct } }),
+              // 更新数据库头像记录
+              env.DB.prepare("UPDATE Teacher SET avatarUri = ? WHERE id = ?")
+                .bind(cleanKey, teacherId!)
+                .run()
+            ]);
             
-            // Return new teacher info
-            const teacher = await env.DB.prepare("SELECT * FROM Teacher WHERE id = ?")
-              .bind(teacherId!)
-              .first();
-            
-            if (!teacher) {
-              return Response.json({ error: "Teacher not found after update" }, { status: 404, headers: corsHeaders });
+            // 检查R2上传结果
+            if (r2Result.status === 'rejected') {
+              console.error('R2 upload failed:', r2Result.reason);
+              return Response.json({ error: "头像存储失败" }, { status: 500, headers: corsHeaders });
             }
             
+            // 检查数据库更新结果
+            if (dbResult.status === 'rejected') {
+              console.error('Database update failed:', dbResult.reason);
+              // 尝试删除已上传的R2文件（异步清理，不阻塞响应）
+              env.R2.delete(cleanKey).catch(err => console.error('Failed to cleanup R2:', err));
+              return Response.json({ error: "数据库更新失败" }, { status: 500, headers: corsHeaders });
+            }
+            
+            // 快速返回成功响应，不包含完整教师信息
             return Response.json({
               success: true,
               data: {
-                id: teacher.id,
-                username: teacher.username,
-                email: teacher.email,
-                name: teacher.name,
-                avatarUri: teacher.avatarUri
+                id: teacherId,
+                avatarUri: cleanKey
               }
             }, { headers: corsHeaders });
           } catch (e: any) {
@@ -581,6 +593,99 @@ export default {
            return Response.json({ ok: true, id: res.meta.last_row_id }, { status: 201, headers: corsHeaders });
         }
 
+        // ===== CHECKIN TASK SYSTEM =====
+
+        // POST /api/checkin/tasks - 创建签到任务
+        if (path === "/api/checkin/tasks" && method === "POST") {
+          try {
+            const body = await request.json() as any;
+            
+            // 参数验证
+            if (!body.classId || !body.title || !body.startAt || !body.endAt) {
+              return Response.json({ error: "classId, title, startAt, endAt required" }, { status: 400, headers: corsHeaders });
+            }
+            
+            // 时间验证
+            const startAt = new Date(body.startAt);
+            const endAt = new Date(body.endAt);
+            if (startAt >= endAt) {
+              return Response.json({ error: "结束时间必须晚于开始时间" }, { status: 400, headers: corsHeaders });
+            }
+            
+            // 插入学任务
+            const res = await env.DB.prepare(`
+              INSERT INTO CheckinTask (classId, teacherId, title, startAt, endAt, status, locationLat, locationLng, locationRadiusM, gestureSequence, passwordPlain)
+              VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?)
+            `).bind(
+              body.classId,
+              body.teacherId, // 需要从认证中获取
+              body.title,
+              body.startAt,
+              body.endAt,
+              body.locationLat || null,
+              body.locationLng || null,
+              body.locationRadiusM || null,
+              body.gestureSequence || null,
+              body.passwordPlain || null
+            ).run();
+            
+            return Response.json({ 
+              success: true, 
+              data: { id: res.meta.last_row_id }
+            }, { status: 201, headers: corsHeaders });
+            
+          } catch (e: any) {
+            console.error('Create checkin task error:', e);
+            return Response.json({ error: "创建签到任务失败" }, { status: 500, headers: corsHeaders });
+          }
+        }
+
+        // GET /api/checkin/tasks - 查询签到任务
+        if (path === "/api/checkin/tasks" && method === "GET") {
+          try {
+            const classId = url.searchParams.get("classId");
+            const status = url.searchParams.get("status");
+            
+            let query = "SELECT * FROM CheckinTask WHERE 1=1";
+            const params: any[] = [];
+            
+            if (classId) {
+              query += " AND classId = ?";
+              params.push(classId);
+            }
+            
+            if (status) {
+              query += " AND status = ?";
+              params.push(status);
+            }
+            
+            query += " ORDER BY createdAt DESC";
+            
+            const { results } = await env.DB.prepare(query).bind(...params).all();
+            return Response.json({ data: results }, { headers: corsHeaders });
+            
+          } catch (e: any) {
+            console.error('Get checkin tasks error:', e);
+            return Response.json({ error: "查询签到任务失败" }, { status: 500, headers: corsHeaders });
+          }
+        }
+
+        // POST /api/checkin/tasks/:id/close - 关闭签到任务
+        if (path.match(/^\/api\/checkin\/tasks\/\d+\/close$/) && method === "POST") {
+          try {
+            const taskId = parseInt(path.match(/\d+/)![0]);
+            
+            await env.DB.prepare("UPDATE CheckinTask SET status = 'CLOSED' WHERE id = ?")
+              .bind(taskId).run();
+            
+            return Response.json({ success: true }, { headers: corsHeaders });
+            
+          } catch (e: any) {
+            console.error('Close checkin task error:', e);
+            return Response.json({ error: "关闭签到任务失败" }, { status: 500, headers: corsHeaders });
+          }
+        }
+
         // --- SYNC MODULE (Android App) ---
 
         // GET /api/sync/download?teacherId=<id>
@@ -642,6 +747,141 @@ export default {
             sessions,
             results: attendanceResults
           }, { headers: corsHeaders });
+        }
+
+        // POST /api/checkin/submit - 提交签到
+        if (path === "/api/checkin/submit" && method === "POST") {
+          try {
+            const body = await request.json() as any;
+            
+            if (!body.taskId || !body.studentId) {
+              return Response.json({ error: "taskId and studentId required" }, { status: 400, headers: corsHeaders });
+            }
+            
+            // 获取任务信息
+            const task = await env.DB.prepare("SELECT * FROM CheckinTask WHERE id = ?")
+              .bind(body.taskId).first();
+            
+            if (!task) {
+              return Response.json({ error: "签到任务不存在" }, { status: 404, headers: corsHeaders });
+            }
+            
+            if (task.status !== 'ACTIVE') {
+              return Response.json({ error: "签到任务未激活" }, { status: 400, headers: corsHeaders });
+            }
+            
+            const now = new Date();
+            const startAt = new Date(task.startAt);
+            const endAt = new Date(task.endAt);
+            
+            // 时间检查
+            if (now < startAt || now > endAt) {
+              return Response.json({ error: "不在签到时间范围内" }, { status: 400, headers: corsHeaders });
+            }
+            
+            // 自动判定逻辑
+            let autoResult: 'PASS' | 'FAIL' = 'PASS';
+            let reason: string[] = [];
+            
+            // 位置检查
+            if (task.locationLat !== null && task.locationLng !== null && task.locationRadiusM !== null) {
+              if (!body.lat || !body.lng) {
+                autoResult = 'FAIL';
+                reason.push('未提供位置信息');
+              } else {
+                const distance = calculateDistance(
+                  body.lat, body.lng,
+                  task.locationLat, task.locationLng
+                );
+                if (distance > task.locationRadiusM) {
+                  autoResult = 'FAIL';
+                  reason.push(`位置超出范围(${Math.round(distance)}m > ${task.locationRadiusM}m)`);
+                }
+              }
+            }
+            
+            // 手势检查
+            if (task.gestureSequence) {
+              if (!body.gestureInput || body.gestureInput !== task.gestureSequence) {
+                autoResult = 'FAIL';
+                reason.push('手势序列不匹配');
+              }
+            }
+            
+            // 密码检查
+            if (task.passwordPlain) {
+              if (!body.passwordInput || body.passwordInput !== task.passwordPlain) {
+                autoResult = 'FAIL';
+                reason.push('密码错误');
+              }
+            }
+            
+            const finalResult = autoResult === 'PASS' ? 'APPROVED' : 'PENDING_REVIEW';
+            
+            // 插入学记录
+            const res = await env.DB.prepare(`
+              INSERT INTO CheckinSubmission (taskId, studentId, lat, lng, gestureInput, passwordInput, autoResult, finalResult, reason)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).bind(
+              body.taskId,
+              body.studentId,
+              body.lat || null,
+              body.lng || null,
+              body.gestureInput || null,
+              body.passwordInput || null,
+              autoResult,
+              finalResult,
+              reason.join('; ')
+            ).run();
+            
+            // 如果自动通过，更新考勤结果
+            if (finalResult === 'APPROVED') {
+              await updateAttendanceResult(body.studentId, task.classId, 'PRESENT');
+            }
+            
+            return Response.json({
+              success: true,
+              data: {
+                id: res.meta.last_row_id,
+                autoResult,
+                finalResult,
+                reason: reason.join('; ')
+              }
+            }, { headers: corsHeaders });
+            
+          } catch (e: any) {
+            console.error('Submit checkin error:', e);
+            return Response.json({ error: "提交签到失败" }, { status: 500, headers: corsHeaders });
+          }
+        }
+
+        // 计算两点间距离（米）
+        function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+          const R = 6371000; // 地球半径（米）
+          const dLat = (lat2 - lat1) * Math.PI / 180;
+          const dLng = (lng2 - lng1) * Math.PI / 180;
+          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                    Math.sin(dLng/2) * Math.sin(dLng/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          return R * c;
+        }
+
+        // 更新考勤结果
+        async function updateAttendanceResult(studentId: number, classId: number, status: string) {
+          // 获取最新的考勤会话
+          const session = await env.DB.prepare(`
+            SELECT id FROM AttendanceSession 
+            WHERE classId = ? AND date(startedAt) = date('now')
+            ORDER BY startedAt DESC LIMIT 1
+          `).bind(classId).first();
+          
+          if (session) {
+            await env.DB.prepare(`
+              INSERT OR REPLACE INTO AttendanceResult (sessionId, studentId, status, score, decidedBy, decidedAt)
+              VALUES (?, ?, ?, 1.0, 'AUTO', datetime('now'))
+            `).bind(session.id, studentId, status).run();
+          }
         }
 
         // POST /api/sync/upload

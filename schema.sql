@@ -103,12 +103,70 @@ CREATE INDEX IF NOT EXISTS idx_sync_entity ON SyncLog(entity, entityId);
 CREATE INDEX IF NOT EXISTS idx_email_login_code_email ON EmailLoginCode(email);
 CREATE INDEX IF NOT EXISTS idx_email_login_code_expires ON EmailLoginCode(expiresAt);
 CREATE INDEX IF NOT EXISTS idx_teacher_email ON Teacher(email);
+CREATE INDEX IF NOT EXISTS idx_checkin_task_class ON CheckinTask(classId);
+CREATE INDEX IF NOT EXISTS idx_checkin_task_teacher ON CheckinTask(teacherId);
+CREATE INDEX IF NOT EXISTS idx_checkin_task_status ON CheckinTask(status);
+CREATE INDEX IF NOT EXISTS idx_checkin_submission_task ON CheckinSubmission(taskId);
+CREATE INDEX IF NOT EXISTS idx_checkin_submission_student ON CheckinSubmission(studentId);
+CREATE INDEX IF NOT EXISTS idx_checkin_submission_latest ON CheckinSubmission(isLatest);
+CREATE INDEX IF NOT EXISTS idx_checkin_submission_final ON CheckinSubmission(finalResult);
+
+/* 签到任务表 */
+CREATE TABLE IF NOT EXISTS CheckinTask (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    classId INTEGER NOT NULL,
+    teacherId INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    startAt TIMESTAMP NOT NULL,
+    endAt TIMESTAMP NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('DRAFT', 'ACTIVE', 'CLOSED')) DEFAULT 'DRAFT',
+    locationLat REAL,
+    locationLng REAL,
+    locationRadiusM INTEGER,
+    gestureSequence TEXT,
+    passwordPlain TEXT,
+    createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (classId) REFERENCES Classroom(id) ON DELETE CASCADE,
+    FOREIGN KEY (teacherId) REFERENCES Teacher(id) ON DELETE CASCADE
+);
+
+/* 签到提交表 */
+CREATE TABLE IF NOT EXISTS CheckinSubmission (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    taskId INTEGER NOT NULL,
+    studentId INTEGER NOT NULL,
+    submittedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    lat REAL,
+    lng REAL,
+    gestureInput TEXT,
+    passwordInput TEXT,
+    autoResult TEXT NOT NULL CHECK(autoResult IN ('PASS', 'FAIL')) DEFAULT 'FAIL',
+    manualResult TEXT CHECK(manualResult IN ('APPROVED', 'REJECTED')),
+    finalResult TEXT NOT NULL CHECK(finalResult IN ('APPROVED', 'PENDING_REVIEW', 'REJECTED')) DEFAULT 'PENDING_REVIEW',
+    reason TEXT,
+    isLatest INTEGER NOT NULL DEFAULT 1,
+    reviewerId INTEGER,
+    reviewedAt TIMESTAMP,
+    FOREIGN KEY (taskId) REFERENCES CheckinTask(id) ON DELETE CASCADE,
+    FOREIGN KEY (studentId) REFERENCES Student(id) ON DELETE CASCADE,
+    FOREIGN KEY (reviewerId) REFERENCES Teacher(id) ON DELETE SET NULL
+);
 
 /* 创建触发器：更新Teacher表的updatedAt字段 */
 CREATE TRIGGER IF NOT EXISTS update_teacher_timestamp 
 AFTER UPDATE ON Teacher
 BEGIN
     UPDATE Teacher SET updatedAt = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+/* 创建触发器：当新的签到提交插入时，将同一学生的其他提交标记为非最新 */
+CREATE TRIGGER IF NOT EXISTS update_latest_submission 
+AFTER INSERT ON CheckinSubmission
+BEGIN
+    UPDATE CheckinSubmission SET isLatest = 0 
+    WHERE studentId = NEW.studentId 
+    AND taskId = NEW.taskId 
+    AND id != NEW.id;
 END;
 
 /*

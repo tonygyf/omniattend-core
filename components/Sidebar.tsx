@@ -10,6 +10,7 @@ import {
   X
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
 import Modal from './Modal';
 import { getFullImageUrl } from '../services/cdn';
 import { updateProfileAvatar } from '../services/authService';
@@ -249,23 +250,36 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
                 if (!user || !avatarFile) return;
                 setAvatarError('');
                 setUploading(true);
-                const type = avatarFile.type || 'image/jpeg';
-                const ext = type.includes('png') ? 'png' : type.includes('jpeg') ? 'jpg' : type.includes('jpg') ? 'jpg' : 'bin';
-                const rawKey = editAvatar || `avatars/teacher-${String(user.id)}.${ext}`;
-                const suggestedKey = rawKey.startsWith('http')
-                  ? rawKey.replace(/^https?:\/\/files\.gyf123\.dpdns\.org\/+/i, '')
-                  : rawKey.replace(/^\/+/, '');
-                const res = await updateProfileAvatar(String(user.id), avatarFile, suggestedKey);
-                setUploading(false);
-                if (res.success && res.data) {
-                  const updated = { ...user } as any;
-                  updated.avatarUri = res.data.avatarUri;
-                  login(updated);
-                  setEditAvatar(res.data.avatarUri);
-                  setAvatarFile(null);
-                  setAvatarPreview('');
-                } else {
-                  setAvatarError(res.error || '头像上传失败');
+                
+                const uploadToast = toast.loading('正在上传头像...');
+                
+                try {
+                  const type = avatarFile.type || 'image/jpeg';
+                  const ext = type.includes('png') ? 'png' : type.includes('jpeg') ? 'jpg' : type.includes('jpg') ? 'jpg' : 'bin';
+                  const rawKey = editAvatar || `avatars/teacher-${String(user.id)}.${ext}`;
+                  const suggestedKey = rawKey.startsWith('http')
+                    ? rawKey.replace(/^https?:\/\/files\.gyf123\.dpdns\.org\/+ /i, '')
+                    : rawKey.replace(/^\/+/, '');
+                  
+                  const res = await updateProfileAvatar(String(user.id), avatarFile, suggestedKey);
+                  
+                  if (res.success && res.data) {
+                    toast.success('头像上传成功！', { id: uploadToast });
+                    const updated = { ...user } as any;
+                    updated.avatarUri = res.data.avatarUri;
+                    login(updated);
+                    setEditAvatar(res.data.avatarUri);
+                    setAvatarFile(null);
+                    setAvatarPreview('');
+                  } else {
+                    toast.error(res.error || '头像上传失败', { id: uploadToast });
+                    setAvatarError(res.error || '头像上传失败');
+                  }
+                } catch (error) {
+                  toast.error('上传过程中出现错误', { id: uploadToast });
+                  setAvatarError('上传过程中出现错误');
+                } finally {
+                  setUploading(false);
                 }
               }}
               className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-60"

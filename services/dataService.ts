@@ -2,7 +2,12 @@ import {
   User,
   AttendanceRecord,
   AttendanceStatus,
-  DashboardStats
+  DashboardStats,
+  CheckinTask,
+  CheckinSubmission,
+  CreateCheckinTaskRequest,
+  CheckinSubmissionRequest,
+  ReviewSubmissionRequest
 } from '../types';
 
 /* =====================
@@ -216,4 +221,86 @@ export const fetchRecentAttendance = async (): Promise<
 
 export const syncDataWithCloudflare = async (): Promise<void> => {
   await delay(1500);
+};
+
+/* =====================
+   CHECKIN TASK SYSTEM
+===================== */
+
+export const fetchCheckinTasks = async (classId?: number, status?: string): Promise<CheckinTask[]> => {
+  try {
+    let url = `${API_BASE_URL}/api/checkin/tasks`;
+    const params = new URLSearchParams();
+    if (classId) params.append('classId', classId.toString());
+    if (status) params.append('status', status);
+    if (params.toString()) url += `?${params.toString()}`;
+    
+    const { data } = await safeFetchJSON<any>(url);
+    return data || [];
+  } catch (e) {
+    console.warn('Failed to fetch checkin tasks', e);
+    return [];
+  }
+};
+
+export const createCheckinTask = async (task: CreateCheckinTaskRequest): Promise<{ success: boolean; id?: number; error?: string }> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/checkin/tasks`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY 
+      },
+      body: JSON.stringify(task)
+    });
+    
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || '创建任务失败' };
+    }
+    return { success: true, id: data.data?.id };
+  } catch (e) {
+    console.error('Create checkin task error:', e);
+    return { success: false, error: '网络错误' };
+  }
+};
+
+export const closeCheckinTask = async (taskId: number): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/checkin/tasks/${taskId}/close`, {
+      method: 'POST',
+      headers: { 'X-API-Key': API_KEY }
+    });
+    
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || '关闭任务失败' };
+    }
+    return { success: true };
+  } catch (e) {
+    console.error('Close checkin task error:', e);
+    return { success: false, error: '网络错误' };
+  }
+};
+
+export const submitCheckin = async (submission: CheckinSubmissionRequest): Promise<{ success: boolean; data?: any; error?: string }> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/checkin/submit`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY 
+      },
+      body: JSON.stringify(submission)
+    });
+    
+    const data = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || '提交签到失败' };
+    }
+    return { success: true, data: data.data };
+  } catch (e) {
+    console.error('Submit checkin error:', e);
+    return { success: false, error: '网络错误' };
+  }
 };
