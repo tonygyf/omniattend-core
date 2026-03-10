@@ -11,7 +11,6 @@ if (!rootElement) {
 
 const root = ReactDOM.createRoot(rootElement);
 root.render(
-  <React.StrictMode>
     <div id="app-wrapper">
       <App />
       <Toaster
@@ -39,5 +38,4 @@ root.render(
         }}
       />
     </div>
-  </React.StrictMode>
 );

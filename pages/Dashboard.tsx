@@ -12,34 +12,44 @@ import { motion, Variants } from 'framer-motion';
 import { Users, UserCheck, Clock, UserX, RefreshCw } from 'lucide-react';
 import { fetchDashboardStats, syncDataWithCloudflare } from '../services/dataService';
 import { DashboardStats } from '../types';
+import ErrorBoundary from '../components/ErrorBoundary';
+import ClientOnly from '../components/ClientOnly';
 
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
 
-  const [isMounted, setIsMounted] = useState(false);
+  const [showChart, setShowChart] = useState(false);
 
-  useEffect(() => {
-    setIsMounted(true);
-    loadStats();
-  }, []);
-
-  const loadStats = async () => {
+  const loadStats = async (mounted: boolean) => {
     try {
       const data = await fetchDashboardStats();
-      setStats(data);
-    } catch (error) {
-      console.error("Failed to load stats", error);
-    } finally {
-      setLoading(false);
+      if (mounted) {
+        setStats(data);
+        setLoading(false);
+
+        requestAnimationFrame(() => {
+          if (mounted) setShowChart(true);
+        });
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
+
+  useEffect(() => {
+    let mounted = true;
+    loadStats(mounted);
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const handleSync = async () => {
     setSyncing(true);
     await syncDataWithCloudflare();
-    await loadStats(); // Reload stats after sync
+    await loadStats(true); // Reload stats after sync
     setSyncing(false);
   }
 
@@ -115,7 +125,7 @@ const Dashboard: React.FC = () => {
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
         <h2 className="text-lg font-semibold text-slate-800 mb-6">近 7 日考勤趋势</h2>
         <div className="h-80 w-full">
-          {isMounted && (
+          {showChart && stats && (
             <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 400, height: 300 }}>
               <BarChart data={stats.weeklyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
