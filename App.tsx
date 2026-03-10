@@ -7,9 +7,15 @@ import UsersPage from './pages/Users';
 import AttendancePage from './pages/Attendance';
 import AiInsights from './pages/AiInsights';
 import SettingsPage from './pages/Settings';
+import ClassroomPage from './pages/Classroom';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ErrorBoundary from './components/ErrorBoundary';
+
+interface ViewingClass {
+  id: number;
+  name: string;
+}
 
 // Inner component to handle routing that consumes AuthContext
 const AppContent = () => {
@@ -17,6 +23,7 @@ const AppContent = () => {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [authPage, setAuthPage] = useState<'login' | 'register'>('login');
+  const [viewingClass, setViewingClass] = useState<ViewingClass | null>(null);
 
   if (isLoading) {
     return <div className="h-screen flex items-center justify-center bg-slate-50 text-slate-400">Loading...</div>;
@@ -34,12 +41,27 @@ const AppContent = () => {
   const renderPage = () => {
     switch (currentPage) {
       case 'dashboard': return <Dashboard />;
-      case 'users': return <UsersPage />;
+      case 'users': 
+        if (viewingClass) {
+          return <UsersPage 
+            classId={viewingClass.id} 
+            className={viewingClass.name} 
+            onNavigateBack={() => setViewingClass(null)} 
+          />;
+        } else {
+          return <ClassroomPage onNavigateToClass={(id, name) => setViewingClass({ id, name })} />;
+        }
       case 'attendance': return <AttendancePage />;
       case 'insights': return <AiInsights />;
       case 'settings': return <SettingsPage />;
       default: return <Dashboard />;
     }
+  };
+
+  const handleNavigate = (page: string) => {
+    setCurrentPage(page);
+    setViewingClass(null); // Reset class view when changing main pages
+    setIsSidebarOpen(false);
   };
 
   return (
@@ -48,7 +70,7 @@ const AppContent = () => {
       {/* Sidebar Navigation */}
       <Sidebar 
         currentPage={currentPage} 
-        onNavigate={setCurrentPage} 
+        onNavigate={handleNavigate} 
         isOpen={isSidebarOpen}
         setIsOpen={setIsSidebarOpen}
       />

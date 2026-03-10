@@ -1,60 +1,98 @@
 import React, { useEffect, useState } from 'react';
-import { fetchUsers } from '../services/dataService';
 import { User } from '../types';
-import { Search, Plus, MoreVertical, ShieldCheck } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { Search, Plus, Trash2, ArrowLeft } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { getFullImageUrl } from '../services/cdn';
+import Modal from '../components/Modal';
 
-const UsersPage: React.FC = () => {
+interface UsersPageProps {
+  classId: number;
+  className: string;
+  onNavigateBack: () => void;
+}
+
+const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBack }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const { user } = useAuth();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newUserName, setNewUserName] = useState('');
+  const [newUserSid, setNewUserSid] = useState('');
 
   useEffect(() => {
-    loadUsers();
-  }, [user]);
-
-  const loadUsers = async () => {
-    const data = await fetchUsers(user?.id);
-    setUsers(data);
+    // 模拟根据 classId 加载学生
+    console.log(`Loading users for class ${classId}...`);
+    const mockUsers: User[] = [
+      { id: '1', name: '张三', sid: '20230101', department: className, role: 'student', status: 'active', avatarUrl: '' },
+      { id: '2', name: '李四', sid: '20230102', department: className, role: 'student', status: 'active', avatarUrl: '' },
+    ];
+    setUsers(mockUsers);
     setLoading(false);
-  };
+  }, [classId, className]);
 
   const filteredUsers = users.filter(user => 
     user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.department.toLowerCase().includes(searchTerm.toLowerCase())
+    (user.sid && user.sid.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const handleDeleteUser = (userId: string) => {
+    setUsers(currentUsers => currentUsers.filter(user => user.id !== userId));
+  };
+
+  const handleAddNewUser = () => {
+    if (!newUserName.trim() || !newUserSid.trim()) {
+      alert('学生姓名和学号不能为空。');
+      return;
+    }
+    const newUser: User = {
+      id: String(Date.now()),
+      name: newUserName,
+      sid: newUserSid,
+      department: className, // 关联当前班级
+      role: 'student',
+      avatarUrl: '',
+      status: 'active',
+    };
+    setUsers(currentUsers => [newUser, ...currentUsers]);
+    setNewUserName('');
+    setNewUserSid('');
+    setIsModalOpen(false);
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">学生管理</h1>
-          <p className="text-slate-500">管理学生信息与人脸录入状态。</p>
+          <button onClick={onNavigateBack} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 mb-2">
+            <ArrowLeft size={16} />
+            返回班级列表
+          </button>
+          <h1 className="text-2xl font-bold text-slate-800">{className} - 学生管理</h1>
+          <p className="text-slate-500">管理该班级的学生信息。</p>
         </div>
-        <button className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+        >
           <Plus size={18} />
           <span>新增学生</span>
         </button>
       </div>
 
+      {/* ... [rest of the component remains largely the same] ... */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        {/* Toolbar */}
         <div className="p-4 border-b border-slate-100 flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
             <input 
               type="text" 
-              placeholder="按姓名或班级搜索..." 
-              className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              placeholder="按姓名或学号搜索..." 
+              className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
         </div>
-
-        {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-slate-600">
             <thead className="bg-slate-50 text-slate-700 font-semibold uppercase text-xs">
@@ -62,57 +100,78 @@ const UsersPage: React.FC = () => {
                 <th className="px-6 py-4">学生</th>
                 <th className="px-6 py-4">学号</th>
                 <th className="px-6 py-4">状态</th>
-                <th className="px-6 py-4">人脸数据</th>
                 <th className="px-6 py-4 text-right">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                 <tr><td colSpan={5} className="px-6 py-8 text-center">Loading users...</td></tr>
-              ) : filteredUsers.length === 0 ? (
-                 <tr><td colSpan={5} className="px-6 py-8 text-center">No users found.</td></tr>
+                 <tr><td colSpan={4} className="px-6 py-8 text-center">Loading...</td></tr>
               ) : (
-                filteredUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <img 
-                          src={user.avatarUrl ? getFullImageUrl(user.avatarUrl) : (`https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=0D8ABC&color=fff`)} 
-                          alt={user.name} 
-                          className="w-10 h-10 rounded-full object-cover border border-slate-200"
-                        />
-                        <div>
-                          <div className="font-medium text-slate-900">{user.name}</div>
-                          <div className="text-xs text-slate-400">{user.department}</div>
+                <AnimatePresence>
+                  {filteredUsers.map((user) => (
+                    <motion.tr 
+                      key={user.id} 
+                      layout
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.25 }}
+                      className="hover:bg-slate-50/50"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <img 
+                            src={user.avatarUrl ? getFullImageUrl(user.avatarUrl) : (`https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=0D8ABC&color=fff`)} 
+                            alt={user.name} 
+                            className="w-10 h-10 rounded-full object-cover border"
+                          />
+                          <div>
+                            <div className="font-medium text-slate-900">{user.name}</div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-slate-600">{user.sid || '-'}</td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize
-                        ${user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}
-                      `}>
-                        {user.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-1.5 text-green-600 text-xs font-medium">
-                        <ShieldCheck size={14} />
-                        已录入
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <button className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100">
-                        <MoreVertical size={18} />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td className="px-6 py-4 text-slate-600">{user.sid || '-'}</td>
+                      <td className="px-6 py-4">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                          {user.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button 
+                          onClick={() => handleDeleteUser(user.id)}
+                          className="text-slate-400 hover:text-red-600 p-1 rounded-full hover:bg-red-100/50"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </AnimatePresence>
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      <Modal
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        title="新增学生"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">学生姓名</label>
+            <input type="text" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">学号</label>
+            <input type="text" value={newUserSid} onChange={(e) => setNewUserSid(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+          </div>
+          <div className="flex justify-end pt-2">
+            <button onClick={handleAddNewUser} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">确认新增</button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
