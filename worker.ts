@@ -660,7 +660,8 @@ export default {
               params.push(status);
             }
             
-            query += " ORDER BY createdAt DESC";
+            query += " ORDER BY id DESC";
+
             
             const { results } = await env.DB.prepare(query).bind(...params).all();
             return Response.json({ data: results }, { headers: corsHeaders });
