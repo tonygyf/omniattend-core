@@ -44,6 +44,14 @@ export interface DashboardStats {
   weeklyTrend: { day: string; count: number }[];
 }
 
+export interface Classroom {
+  id: number;
+  name: string;
+  year: number;
+  teacherId: number;
+  studentCount?: number; // Optional, as it might not always be present
+}
+
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
@@ -138,7 +146,6 @@ export interface CheckinSubmission {
 
 export interface CreateCheckinTaskRequest {
   classId: number;
-  teacherId: number; // Added teacherId
   title: string;
   startAt: string;
   endAt: string;

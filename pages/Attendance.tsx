@@ -166,7 +166,6 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
   const [task, setTask] = useState<Partial<CreateCheckinTaskRequest>>({
     title: '',
     classId: 1,
-    teacherId: auth.user?.id,
     status: CheckinTaskStatus.ACTIVE,
   });
   const [constraints, setConstraints] = useState({ location: false, gesture: false, password: false });
@@ -178,7 +177,6 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
       ...task,
       title: task.title || '未命名签到',
       classId: task.classId || 1,
-      teacherId: auth.user?.id || 0,
       startAt: time.start.toISOString(),
       endAt: time.end.toISOString(),
       locationLat: constraints.location ? (task.locationLat || null) : null,

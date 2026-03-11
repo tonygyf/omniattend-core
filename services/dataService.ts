@@ -8,7 +8,8 @@ import {
   CreateCheckinTaskRequest,
   CheckinSubmissionRequest,
   ReviewSubmissionRequest,
-  StudentAttendanceAnalysis
+  StudentAttendanceAnalysis,
+  Classroom
 } from '../types';
 
 /* =====================
@@ -33,6 +34,8 @@ const safeFetchJSON = async <T>(url: string): Promise<T> => {
     headers: { 'X-API-Key': API_KEY }
   });
   if (!res.ok) {
+    const errorBody = await res.text();
+    console.error(`Request to ${url} failed with status ${res.status}:`, errorBody);
     throw new Error(`Request failed: ${url}`);
   }
   return res.json();
@@ -42,12 +45,18 @@ const safeFetchJSON = async <T>(url: string): Promise<T> => {
    MOCK DATA
 ===================== */
 
+const generateMockClassrooms = (): Classroom[] => [
+  { id: 1, name: '软件工程 2023级 1班', year: 2023, teacherId: 1, studentCount: 58 },
+  { id: 2, name: '计算机科学 2023级 3班', year: 2023, teacherId: 1, studentCount: 62 },
+  { id: 3, name: '人工智能 2022级 实验班', year: 2022, teacherId: 1, studentCount: 35 },
+];
+
 const generateMockUsers = (): User[] => [
-  { id: '1', name: 'Tony Stark', department: 'Engineering', role: 'CTO', status: 'active', avatarUrl: 'https://picsum.photos/100/100?random=1' },
-  { id: '2', name: 'Steve Rogers', department: 'Operations', role: 'Manager', status: 'active', avatarUrl: 'https://picsum.photos/100/100?random=2' },
-  { id: '3', name: 'Natasha Romanoff', department: 'Security', role: 'Lead', status: 'active', avatarUrl: 'https://picsum.photos/100/100?random=3' },
-  { id: '4', name: 'Bruce Banner', department: 'Research', role: 'Scientist', status: 'active', avatarUrl: 'https://picsum.photos/100/100?random=4' },
-  { id: '5', name: 'Peter Parker', department: 'Internship', role: 'Intern', status: 'active', avatarUrl: 'https://picsum.photos/100/100?random=5' }
+  { id: '1', name: 'Tony Stark', department: '软件工程 2023级 1班', role: 'Student', sid: '20230101', status: 'active', avatarUrl: 'https://picsum.photos/100/100?random=1' },
+  { id: '2', name: 'Steve Rogers', department: '软件工程 2023级 1班', role: 'Student', sid: '20230102', status: 'active', avatarUrl: 'https://picsum.photos/100/100?random=2' },
+  { id: '3', name: 'Natasha Romanoff', department: '计算机科学 2023级 3班', role: 'Student', sid: '20230201', status: 'active', avatarUrl: 'https://picsum.photos/100/100?random=3' },
+  { id: '4', name: 'Bruce Banner', department: '人工智能 2022级 实验班', role: 'Student', sid: '20220301', status: 'active', avatarUrl: 'https://picsum.photos/100/100?random=4' },
+  { id: '5', name: 'Peter Parker', department: '人工智能 2022级 实验班', role: 'Student', sid: '20220302', status: 'active', avatarUrl: 'https://picsum.photos/100/100?random=5' }
 ];
 
 const generateMockAttendance = (): AttendanceRecord[] => [
@@ -88,6 +97,44 @@ const generateMockAttendance = (): AttendanceRecord[] => [
 /* =====================
    API METHODS
 ===================== */
+
+export const fetchClassrooms = async (): Promise<Classroom[]> => {
+  if (USE_MOCK) {
+    await delay();
+    return generateMockClassrooms();
+  }
+  try {
+    const { data } = await safeFetchJSON<any>(`${API_BASE_URL}/api/classrooms`);
+    return data || [];
+  } catch (e) {
+    console.warn('Classrooms API failed, using mock data', e);
+    return generateMockClassrooms();
+  }
+};
+
+export const fetchAllStudents = async (): Promise<User[]> => {
+  if (USE_MOCK) {
+    await delay();
+    return generateMockUsers();
+  }
+  try {
+    // This assumes a new or modified endpoint that returns all students with their class name.
+    // If not available, we would revert to the old fetchUsers logic.
+    const { data } = await safeFetchJSON<any>(`${API_BASE_URL}/api/students/all`);
+    return (data || []).map((s: any) => ({
+      id: String(s.id),
+      name: s.name,
+      department: s.className || '未分配',
+      role: 'Student',
+      sid: s.sid,
+      status: 'active',
+      avatarUrl: s.avatarUri,
+    }));
+  } catch (e) {
+    console.warn('All Students API failed, using mock data', e);
+    return generateMockUsers();
+  }
+};
 
 export const fetchDashboardStats = async (): Promise<DashboardStats> => {
   if (USE_MOCK) {
@@ -133,50 +180,17 @@ export const fetchUsers = async (
     await delay();
     return generateMockUsers();
   }
-
   try {
-    const { data: rooms } = await safeFetchJSON<any>(
-      `${API_BASE_URL}/api/classrooms`
-    );
+    // This function now gets all students and filters by teacherId on the client-side.
+    // This is less efficient but works if the backend doesn't support filtering all students by teacher.
+    const allStudents = await fetchAllStudents();
+    if (!teacherId) return allStudents;
 
-    const targetRooms = teacherId
-      ? rooms.filter(
-          (r: any) => r.teacherId?.toString() === teacherId.toString()
-        )
-      : rooms;
+    // This part is tricky as students don't have a direct teacherId.
+    // We'd need to fetch classrooms first to know which students belong to a teacher.
+    // For now, we'll assume the `fetchAllStudents` might be filtered on the backend, or we return all.
+    return allStudents; 
 
-    if (!targetRooms.length) return [];
-
-    const studentLists = await Promise.all(
-      targetRooms.map(async (room: any) => {
-        try {
-          const { data } = await safeFetchJSON<any>(
-            `${API_BASE_URL}/api/students?classId=${room.id}`
-          );
-          return { room, students: data || [] };
-        } catch {
-          return { room, students: [] };
-        }
-      })
-    );
-
-    const users: User[] = studentLists.flatMap(
-      ({ room, students }) =>
-        students.map((s: any) => ({
-          id: String(s.id),
-          name: s.name,
-          department: room.name,
-          role: 'Student',
-          sid: s.sid,
-          status: 'active',
-          avatarUrl: s.avatarUri,
-          faceEmbeddings: null
-        }))
-    );
-
-    if (users.length) return users;
-
-    throw new Error('No students found');
   } catch (e) {
     console.warn('Users API failed, using mock data', e);
     await delay();

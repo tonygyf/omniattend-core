@@ -3,10 +3,12 @@ import { fetchAttendanceAnalysis } from '../services/dataService'
 import { generateAttendanceInsights } from '../services/geminiService'
 import { StudentAttendanceAnalysis } from '../types'
 import { useAuth } from '../context/AuthContext'
-import { Loader2, AlertTriangle, ArrowUpDown, Sparkles, Bot } from 'lucide-react'
+import { Loader2, AlertTriangle, ArrowUpDown, Sparkles, Bot, HelpCircle, List, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion'
 
 type SortKey = keyof StudentAttendanceAnalysis | 'attendanceRate'
+
+import Modal from '../components/Modal';
 
 const AiInsightsPage: React.FC = () => {
   const [analysis, setAnalysis] = useState<StudentAttendanceAnalysis[]>([])
@@ -18,6 +20,8 @@ const AiInsightsPage: React.FC = () => {
   })
   const [insights, setInsights] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [viewMode, setViewMode] = useState<'student' | 'class'>('student');
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const auth = useAuth()
 
@@ -168,10 +172,26 @@ const AiInsightsPage: React.FC = () => {
       </AnimatePresence>
 
       {/* Table */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b">
-          <h2 className="text-xl font-semibold text-slate-800">全体学生考勤分析</h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-semibold text-slate-800">全体学生考勤分析</h2>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+            <button onClick={() => setViewMode('student')} className={`px-3 py-1 rounded-md text-sm font-medium ${viewMode === 'student' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+              <Users size={16} className="inline mr-1"/>
+              学生视图
+            </button>
+            <button onClick={() => setViewMode('class')} className={`px-3 py-1 rounded-md text-sm font-medium ${viewMode === 'class' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+              <List size={16} className="inline mr-1"/>
+              班级视图
+            </button>
+          </div>
+          <button onClick={() => setIsHelpOpen(true)} className="p-2 text-slate-400 hover:text-slate-600">
+            <HelpCircle size={20} />
+          </button>
         </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
 
         {loading ? (
           <div className="flex h-60 items-center justify-center text-slate-500">
@@ -184,77 +204,138 @@ const AiInsightsPage: React.FC = () => {
             {error}
           </div>
         ) : (
-          <div className="overflow-x-auto max-h-[500px]">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10">
-                <tr>
-                  <th className="px-6 py-4 font-semibold">学生</th>
-                  {[
-                    ['totalSessions', '总次数'],
-                    ['presentCount', '出勤'],
-                    ['lateCount', '迟到'],
-                    ['absentCount', '缺勤'],
-                    ['attendanceRate', '出勤率']
-                  ].map(([key, label]) => (
-                    <th key={key} className="px-6 py-4 font-semibold">
-                      <div className="flex items-center gap-1 cursor-pointer" onClick={() => requestSort(key as SortKey)}>
-                        {label}
-                        <ArrowUpDown size={14} />
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100">
-                <AnimatePresence>
-                  {sortedAnalysis.map(student => {
-                    const attendanceRate = student.totalSessions > 0 ? (student.presentCount / student.totalSessions) * 100 : 0
-                    const isAtRisk = student.absentCount > 3 || student.lateCount > 5
-
-                    return (
-                      <motion.tr
-                        key={student.studentId}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -10 }}
-                        transition={{ duration: 0.25 }}
-                        className={`hover:bg-slate-50 ${isAtRisk ? 'bg-red-50/50 font-medium' : ''}`}
-                      >
-                        <td className="px-6 py-4">
-                          <div className="flex flex-col">
-                            <span>{student.studentName}</span>
-                            <span className="text-xs text-slate-500 font-mono">{student.studentSid}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-center font-mono">{student.totalSessions}</td>
-                        <td className="px-6 py-4 text-center font-mono text-green-600">{student.presentCount}</td>
-                        <td className="px-6 py-4 text-center font-mono text-amber-600">{student.lateCount}</td>
-                        <td className="px-6 py-4 text-center font-mono text-red-600">{student.absentCount}</td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            <div className="w-full bg-slate-200 rounded-full h-2.5">
-                              <div
-                                className={`h-2.5 rounded-full ${
-                                  attendanceRate > 80 ? 'bg-green-500' : attendanceRate > 60 ? 'bg-amber-500' : 'bg-red-500'
-                                }`}
-                                style={{ width: `${attendanceRate}%` }}
-                              />
-                            </div>
-                            <span className="font-mono text-xs">{attendanceRate.toFixed(0)}%</span>
-                          </div>
-                        </td>
-                      </motion.tr>
-                    )
-                  })}
-                </AnimatePresence>
-              </tbody>
-            </table>
-          </div>
+          viewMode === 'student' ? (
+            <StudentDetailView analysis={sortedAnalysis} />
+          ) : (
+            <ClassSummaryView analysis={analysis} />
+          )
         )}
       </div>
+
+      <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
+
     </motion.div>
   )
 }
 
-export default AiInsightsPage
+export default AiInsightsPage;
+
+// View Components
+const StudentDetailView: React.FC<{ analysis: StudentAttendanceAnalysis[] }> = ({ analysis }) => (
+  <div className="overflow-x-auto max-h-[500px]">
+    <table className="w-full text-left text-sm">
+      {/* ... [The existing table head] ... */}
+      <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10">
+        <tr>
+          <th className="px-6 py-4 font-semibold">学生</th>
+          <th className="px-6 py-4 font-semibold">总次数</th>
+          <th className="px-6 py-4 font-semibold">出勤</th>
+          <th className="px-6 py-4 font-semibold">迟到</th>
+          <th className="px-6 py-4 font-semibold">缺勤</th>
+          <th className="px-6 py-4 font-semibold">出勤率</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        <AnimatePresence>
+          {analysis.map(student => (
+            <motion.tr key={student.studentId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <td className="px-6 py-4">{student.studentName}</td>
+              <td className="px-6 py-4 text-center">{student.totalSessions}</td>
+              <td className="px-6 py-4 text-center text-green-600">{student.presentCount}</td>
+              <td className="px-6 py-4 text-center text-amber-600">{student.lateCount}</td>
+              <td className="px-6 py-4 text-center text-red-600">{student.absentCount}</td>
+              <td className="px-6 py-4">{((student.presentCount / student.totalSessions) * 100).toFixed(0)}%</td>
+            </motion.tr>
+          ))}
+        </AnimatePresence>
+      </tbody>
+    </table>
+  </div>
+);
+
+const ClassSummaryView: React.FC<{ analysis: StudentAttendanceAnalysis[] }> = ({ analysis }) => {
+  const byClass = useMemo(() => {
+    const grouped: { [key: string]: StudentAttendanceAnalysis[] } = {};
+    analysis.forEach(s => {
+      if (!grouped[s.className]) grouped[s.className] = [];
+      grouped[s.className].push(s);
+    });
+    return Object.entries(grouped).map(([className, students]) => ({
+      className,
+      studentCount: students.length,
+      avgAttendance: students.reduce((acc, s) => acc + (s.presentCount / s.totalSessions), 0) / students.length * 100,
+      totalAbsences: students.reduce((acc, s) => acc + s.absentCount, 0),
+      students
+    }));
+  }, [analysis]);
+
+  const [expandedClass, setExpandedClass] = useState<string | null>(null);
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-sm">
+        <thead className="bg-slate-50 text-slate-500">
+          <tr>
+            <th className="px-6 py-4 font-semibold">班级</th>
+            <th className="px-6 py-4 font-semibold">学生数</th>
+            <th className="px-6 py-4 font-semibold">平均出勤率</th>
+            <th className="px-6 py-4 font-semibold">总缺勤</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          <AnimatePresence>
+            {byClass.map(c => (
+              <React.Fragment key={c.className}>
+                <motion.tr layout onClick={() => setExpandedClass(expandedClass === c.className ? null : c.className)} className="cursor-pointer hover:bg-slate-50">
+                  <td className="px-6 py-4 font-medium text-blue-700">{c.className}</td>
+                  <td className="px-6 py-4">{c.studentCount}</td>
+                  <td className="px-6 py-4">{c.avgAttendance.toFixed(1)}%</td>
+                  <td className="px-6 py-4 text-red-600">{c.totalAbsences}</td>
+                </motion.tr>
+                {expandedClass === c.className && (
+                  <motion.tr>
+                    <td colSpan={4} className="p-0 bg-slate-50">
+                      <div className="p-4">
+                        <StudentDetailView analysis={c.students} />
+                      </div>
+                    </td>
+                  </motion.tr>
+                )}
+              </React.Fragment>
+            ))}
+          </AnimatePresence>
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+const HelpModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen, onClose }) => (
+  <Modal open={isOpen} onClose={onClose} title="AI Insights - Common Issues">
+    <div className="space-y-4 text-sm text-slate-600">
+      <div>
+        <h4 className="font-semibold text-slate-800 mb-1">1. Blank Screen or Endless Loading</h4>
+        <ul className="list-disc list-inside space-y-1">
+          <li>Check browser console (F12) for any red error messages.</li>
+          <li>Ensure your `API_BASE_URL` in `services/dataService.ts` is correct and reachable.</li>
+          <li>Verify authentication is working; try logging out and back in.</li>
+        </ul>
+      </div>
+      <div>
+        <h4 className="font-semibold text-slate-800 mb-1">2. Insight Generation Fails (500 Error)</h4>
+        <ul className="list-disc list-inside space-y-1">
+          <li>This can be a temporary server-side issue. Please try again in a few moments.</li>
+          <li>Ensure your backend service is running and connected to the database correctly.</li>
+        </ul>
+      </div>
+      <div>
+        <h4 className="font-semibold text-slate-800 mb-1">3. Gemini API or Network Errors</h4>
+        <ul className="list-disc list-inside space-y-1">
+          <li>This indicates a problem connecting to the Google Gemini API.</li>
+          <li>Check your internet connection.</li>
+          <li>Verify that the Gemini API key and configuration on your backend are correct.</li>
+        </ul>
+      </div>
+    </div>
+  </Modal>
+);
