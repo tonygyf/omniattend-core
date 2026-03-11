@@ -8,6 +8,7 @@ export interface Env {
   API_SECRET?: string; // API Secret Key for Auth
   ASSETS: any; // Cloudflare Assets Fetcher
   R2: any; // Cloudflare R2 Bucket
+  apikey?: string;
 }
 
 // Helper: Simple SHA-256 hash for passwords
@@ -1065,6 +1066,77 @@ export default {
           } catch (e: any) {
             console.error('Get attendance summary error:', e);
             return Response.json({ error: "获取考勤洞察数据失败" }, { status: 500, headers: corsHeaders });
+          }
+        }
+
+        // POST /api/insights - Generate AI Insights via Groq
+        if (path === "/api/insights" && method === "POST") {
+          try {
+            if (!env.apikey) {
+              return Response.json({ error: "Groq API key is not configured" }, { status: 500, headers: corsHeaders });
+            }
+
+            const body = await request.json() as any;
+            const { stats, students } = body;
+
+            if (!stats || !students) {
+              return Response.json({ error: "Stats and students data are required" }, { status: 400, headers: corsHeaders });
+            }
+
+            const prompt = `
+              你是一名教育数据分析专家。
+              请根据以下考勤统计数据和学生抽样记录，为教师生成3-5条简短、精炼、可执行的洞察和建议。
+
+              整体考勤统计：
+              - 总学生数: ${stats.totalUsers}
+              - 今日出勤: ${stats.presentToday}
+              - 今日迟到: ${stats.lateToday}
+              - 今日缺勤: ${stats.absentToday}
+
+              部分学生考勤记录（抽样）：
+              ${JSON.stringify(students, null, 2)}
+
+              请完成以下任务：
+              1. 基于抽样数据，识别是否存在考勤风险较高的学生（例如，高缺勤率或高迟到率）。
+              2. 发现潜在的迟到或缺勤趋势（如果数据能反映）。
+              3. 简要总结班级的整体考勤情况。
+              4. 提出2-3条具体、可操作的管理建议。
+
+              输出要求：
+              - 使用简洁的中文 Markdown 格式，分点列出。
+              - 洞察和建议应直接、明确。
+              - 总字数不超过150字。
+            `;
+
+            const groqResponse = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${env.apikey}`
+              },
+              body: JSON.stringify({
+                model: "llama-3.1-8b-instant",
+                messages: [
+                  { role: "user", content: prompt }
+                ],
+                temperature: 0.7
+              })
+            });
+
+            if (!groqResponse.ok) {
+              const errorText = await groqResponse.text();
+              console.error("Groq API Error:", groqResponse.status, errorText);
+              return Response.json({ error: `Groq API request failed: ${errorText}` }, { status: groqResponse.status, headers: corsHeaders });
+            }
+
+            const data = await groqResponse.json();
+            const result = data?.choices?.[0]?.message?.content || "抱歉，未能生成洞察建议。";
+
+            return Response.json({ result }, { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+          } catch (e: any) {
+            console.error('Error in /api/insights:', e);
+            return Response.json({ error: "处理 AI 洞察请求时发生内部错误" }, { status: 500, headers: corsHeaders });
           }
         }
 

@@ -1,66 +1,128 @@
-import React, { useEffect, useState, useMemo } from 'react'
-import { fetchAttendanceAnalysis } from '../services/dataService'
-import { generateAttendanceInsights } from '../services/geminiService'
-import { StudentAttendanceAnalysis } from '../types'
-import { useAuth } from '../context/AuthContext'
-import { Loader2, AlertTriangle, ArrowUpDown, Sparkles, Bot, HelpCircle, List, Users } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion'
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { fetchAttendanceAnalysis } from '../services/dataService';
+import { generateAttendanceInsights } from '../services/groqService';
+import { StudentAttendanceAnalysis } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { Loader2, AlertTriangle, Sparkles, Bot, HelpCircle, List, Users } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
-type SortKey = keyof StudentAttendanceAnalysis | 'attendanceRate'
+type SortKey = keyof StudentAttendanceAnalysis | 'attendanceRate';
 
 import Modal from '../components/Modal';
 
+const COOLDOWN_SECONDS = 60;
+
 const AiInsightsPage: React.FC = () => {
-  const [analysis, setAnalysis] = useState<StudentAttendanceAnalysis[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [analysis, setAnalysis] = useState<StudentAttendanceAnalysis[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({
     key: 'absentCount',
     direction: 'desc'
-  })
-  const [insights, setInsights] = useState<string | null>(null)
-  const [generating, setGenerating] = useState(false)
+  });
+  const [insights, setInsights] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
   const [viewMode, setViewMode] = useState<'student' | 'class'>('student');
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
 
-  const auth = useAuth()
+  const auth = useAuth();
+
+  const getCacheKey = useCallback(() => {
+    if (!auth.user?.id) return null;
+    const date = new Date().toISOString().split('T')[0];
+    return `insights_${auth.user.id}_${date}`;
+  }, [auth.user?.id]);
 
   useEffect(() => {
-    if (auth.user?.id) loadAnalysis(auth.user.id)
-  }, [auth.user?.id])
-
-  const loadAnalysis = async (teacherId: number) => {
-    setLoading(true)
-    setError(null)
-    try {
-      const data = await fetchAttendanceAnalysis(teacherId)
-      setAnalysis(data)
-    } catch (err) {
-      console.error(err)
-      setError('无法加载考勤分析数据，请稍后重试。')
-    } finally {
-      setLoading(false)
+    const cacheKey = getCacheKey();
+    if (cacheKey) {
+      const cachedInsights = localStorage.getItem(cacheKey);
+      if (cachedInsights) {
+        setInsights(cachedInsights);
+      }
     }
-  }
+  }, [getCacheKey]);
 
-  const generateInsights = async () => {
-    setGenerating(true)
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (cooldown > 0) {
+      timer = setInterval(() => {
+        setCooldown(prev => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [cooldown]);
+
+  const loadAnalysis = useCallback(async (teacherId: number) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchAttendanceAnalysis(teacherId);
+      setAnalysis(data);
+    } catch (err) {
+      console.error(err);
+      setError('无法加载考勤分析数据，请稍后重试。');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (auth.user?.id) {
+      loadAnalysis(auth.user.id);
+    }
+  }, [auth.user?.id, loadAnalysis]);
+
+  const handleGenerateInsights = async () => {
+    const cacheKey = getCacheKey();
+    if (cacheKey) {
+      const cachedInsights = localStorage.getItem(cacheKey);
+      if (cachedInsights) {
+        setInsights(cachedInsights);
+        return;
+      }
+    }
+
+    setGenerating(true);
+    setError(null); // Clear previous errors
     try {
       const stats = {
         totalUsers: analysis.length,
         presentToday: analysis.reduce((sum, s) => sum + s.presentCount, 0),
         lateToday: analysis.reduce((sum, s) => sum + s.lateCount, 0),
         absentToday: analysis.reduce((sum, s) => sum + s.absentCount, 0),
-        weeklyTrend: []
+      };
+      const studentData = analysis.slice(0, 20).map(s => ({
+        name: s.studentName,
+        class: s.className,
+        totalSessions: s.totalSessions,
+        present: s.presentCount,
+        late: s.lateCount,
+        absent: s.absentCount,
+        attendanceRate: s.totalSessions > 0 ? (s.presentCount / s.totalSessions).toFixed(2) : '0.00'
+      }));
+      
+      const result = await generateAttendanceInsights(stats, studentData);
+      setInsights(result);
+
+      if (cacheKey) {
+        localStorage.setItem(cacheKey, result);
       }
-      const result = await generateAttendanceInsights(stats, [])
-      setInsights(result)
-    } catch (e) {
-      console.error(e)
-      setInsights('生成洞察失败，请检查 Gemini API 配置。')
+      
+      setCooldown(COOLDOWN_SECONDS);
+    } catch (e: any) {
+      console.error(e);
+      if (e.status === 429) {
+        setError('AI 调用过于频繁，请稍后再试。');
+      } else {
+        setError('生成洞察失败，请检查 AI 服务连接。');
+      }
+      setInsights(null); // Clear insights on error
+    } finally {
+      setGenerating(false);
     }
-    setGenerating(false)
-  }
+  };
 
   const sortedAnalysis = useMemo(() => {
     const items = [...analysis]
@@ -121,16 +183,20 @@ const AiInsightsPage: React.FC = () => {
           <h2 className="text-lg font-semibold">AI 智能洞察</h2>
         </div>
 
-        {insights ? (
-          <pre className="text-sm whitespace-pre-wrap font-sans">{insights}</pre>
+        {error && (
+            <div className="bg-red-800/50 p-3 rounded-lg text-sm mb-4">{error}</div>
+        )}
+
+        {insights && !generating ? (
+          <pre className="text-sm whitespace-pre-wrap font-sans animate-fade-in">{insights}</pre>
         ) : (
           <button
-            onClick={generateInsights}
-            disabled={generating || loading}
+            onClick={handleGenerateInsights}
+            disabled={generating || loading || cooldown > 0}
             className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
           >
             {generating ? <Loader2 className="animate-spin w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
-            {generating ? '正在生成...' : '生成考勤洞察'}
+            {generating ? '正在生成...' : cooldown > 0 ? `${cooldown}秒后可再试` : '生成考勤洞察'}
           </button>
         )}
       </motion.div>
