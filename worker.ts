@@ -83,11 +83,16 @@ export default {
           let dbStatus = "unknown";
           let userCount = 0;
           try {
-             // Try a lightweight query to check D1 connection
+             // Step 1: A simple, fast query to check for connectivity.
+             await env.DB.prepare("SELECT 1").run();
+             dbStatus = "connected";
+
+             // Step 2: If connected, get the actual count.
              const result = await env.DB.prepare("SELECT COUNT(*) as count FROM Teacher").first();
              userCount = result.count as number;
-             dbStatus = "connected";
+
           } catch (e) {
+             console.error("DB Health Check Failed:", e);
              dbStatus = "disconnected";
           }
 
