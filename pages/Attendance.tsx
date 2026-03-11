@@ -174,17 +174,19 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
   const handleSubmit = async () => {
     setLoading(true);
     const finalTask: CreateCheckinTaskRequest = {
-      ...task,
-      title: task.title || '未命名签到',
-      classId: task.classId || 1,
-      startAt: time.start.toISOString(),
-      endAt: time.end.toISOString(),
-      locationLat: constraints.location ? (task.locationLat || null) : null,
-      locationLng: constraints.location ? (task.locationLng || null) : null,
-      locationRadiusM: constraints.location ? (task.locationRadiusM || null) : null,
-      gestureSequence: constraints.gesture ? (task.gestureSequence || null) : null,
-      passwordPlain: constraints.password ? (task.passwordPlain || null) : null,
-    };
+        ...task,
+        teacherId: auth.user!.id,
+        title: task.title || '未命名签到',
+        classId: task.classId || 1,
+        startAt: time.start.toISOString(),
+        endAt: time.end.toISOString(),
+        status: CheckinTaskStatus.ACTIVE,
+        locationLat: constraints.location ? (task.locationLat || null) : null,
+        locationLng: constraints.location ? (task.locationLng || null) : null,
+        locationRadiusM: constraints.location ? (task.locationRadiusM || null) : null,
+        gestureSequence: constraints.gesture ? (task.gestureSequence || null) : null,
+        passwordPlain: constraints.password ? (task.passwordPlain || null) : null,
+      };
 
     const result = await createCheckinTask(finalTask);
     if (result.success) {

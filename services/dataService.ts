@@ -118,20 +118,41 @@ export const fetchAllStudents = async (): Promise<User[]> => {
     return generateMockUsers();
   }
   try {
-    // This assumes a new or modified endpoint that returns all students with their class name.
-    // If not available, we would revert to the old fetchUsers logic.
-    const { data } = await safeFetchJSON<any>(`${API_BASE_URL}/api/students/all`);
-    return (data || []).map((s: any) => ({
-      id: String(s.id),
-      name: s.name,
-      department: s.className || '未分配',
-      role: 'Student',
-      sid: s.sid,
-      status: 'active',
-      avatarUrl: s.avatarUri,
-    }));
+    // 1. Fetch all classrooms first.
+    const classrooms = await fetchClassrooms();
+    if (!classrooms.length) return [];
+
+    // 2. Fetch students for each classroom.
+    const studentLists = await Promise.all(
+      classrooms.map(async (room) => {
+        try {
+          const { data } = await safeFetchJSON<any>(
+            `${API_BASE_URL}/api/students?classId=${room.id}`
+          );
+          // 3. Map students and add the classroom name to each student object.
+          return (data || []).map((s: any) => ({
+            id: String(s.id),
+            name: s.name,
+            department: room.name, // Assign classroom name
+            role: 'Student',
+            sid: s.sid,
+            status: 'active',
+            avatarUrl: s.avatarUri,
+          }));
+        } catch {
+          return []; // Return empty array if a single class fetch fails
+        }
+      })
+    );
+
+    // 4. Flatten the array of arrays into a single student list.
+    const allStudents = studentLists.flat();
+    if (allStudents.length) return allStudents;
+
+    throw new Error('No students found across all classes');
+
   } catch (e) {
-    console.warn('All Students API failed, using mock data', e);
+    console.warn('fetchAllStudents failed, falling back to mock data', e);
     return generateMockUsers();
   }
 };

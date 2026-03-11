@@ -146,6 +146,7 @@ export interface CheckinSubmission {
 
 export interface CreateCheckinTaskRequest {
   classId: number;
+  teacherId: number;
   title: string;
   startAt: string;
   endAt: string;
