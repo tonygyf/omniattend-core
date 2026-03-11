@@ -4,6 +4,17 @@ import { Toaster } from 'react-hot-toast';
 import App from './App';
 import './src/index.css';
 
+// Immediately-invoked function to set the theme on initial load
+(function() {
+  const theme = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  if (theme === 'dark' || (!theme && prefersDark)) {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+})();
+
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error("Could not find root element to mount to");

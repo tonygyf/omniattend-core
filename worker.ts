@@ -647,8 +647,8 @@ export default {
             }, { status: 201, headers: corsHeaders });
             
           } catch (e: any) {
-            console.error('Create checkin task error:', e);
-            return Response.json({ error: "创建签到任务失败" }, { status: 500, headers: corsHeaders });
+            console.error('Create checkin task D1 error:', e.message, e.cause);
+            return Response.json({ error: "数据库写入失败", details: e.message }, { status: 500, headers: corsHeaders });
           }
         }
 

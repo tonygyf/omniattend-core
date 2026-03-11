@@ -1,3 +1,4 @@
+@variant dark (&:where(.dark, .dark *));
 @import "tailwindcss";
 
 @layer base {

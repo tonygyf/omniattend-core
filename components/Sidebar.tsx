@@ -161,18 +161,18 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
 
       {/* Sidebar */}
       <aside 
-        className={`fixed top-0 left-0 z-30 h-full w-64 bg-slate-900 text-white transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static flex flex-col ${
+        className={`fixed top-0 left-0 z-30 h-full w-64 bg-white text-slate-800 border-r border-slate-200 dark:bg-slate-900 dark:text-white dark:border-slate-800 transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static flex flex-col ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="flex items-center justify-between p-6 border-b border-slate-700">
+        <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
           <div className="flex items-center gap-2 font-bold text-xl">
             <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
               <span className="text-white text-lg">F</span>
             </div>
             FaceCheck
           </div>
-          <button onClick={() => setIsOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
+          <button onClick={() => setIsOpen(false)} className="lg:hidden text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white">
             <X size={24} />
           </button>
         </div>
@@ -187,8 +187,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
                 onClick={() => handleNav(item.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
                   isActive 
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' 
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                    ? 'bg-blue-600 text-white shadow-lg' 
+                    : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white'
                 }`}
               >
                 <Icon size={20} />
@@ -200,25 +200,25 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
 
         {/* Current User Card */}
         {user && (
-          <div className="mx-4 mb-3 p-3 bg-slate-800 rounded-xl border border-slate-700">
+          <div className="mx-4 mb-3 p-3 bg-slate-50 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 rounded-xl">
             <div className="flex items-center gap-3">
               <img
                 src={avatarUrl}
                 alt={user.name}
-                className="w-10 h-10 rounded-full object-cover border border-slate-700"
+                className="w-10 h-10 rounded-full object-cover border border-slate-200 dark:border-slate-700"
               />
               <div className="flex-1">
-                <div className="text-sm font-semibold text-white">{user.name}</div>
-                <div className="text-xs text-slate-400">{user.email || user.username}</div>
+                <div className="text-sm font-semibold text-slate-800 dark:text-white">{user.name}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">{user.email || user.username}</div>
               </div>
             </div>
             <div className="mt-2 flex items-center justify-between">
-              <span className={`text-xs px-2 py-0.5 rounded-full ${remembered ? 'bg-green-700 text-green-100' : 'bg-slate-700 text-slate-200'}`}>
+              <span className={`text-xs px-2 py-0.5 rounded-full ${remembered ? 'bg-green-100 text-green-800 dark:bg-green-700 dark:text-green-100' : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-200'}`}>
                 {remembered ? '已记住登录' : '未记住登录'}
               </span>
               <button
                 onClick={() => setEditOpen(true)}
-                className="text-xs text-blue-300 hover:text-blue-200"
+                className="text-xs text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
               >
                 管理账户
               </button>
@@ -226,10 +226,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
           </div>
         )}
 
-        <div className="p-4 border-t border-slate-700 space-y-2">
+        <div className="p-4 border-t border-slate-200 dark:border-slate-700 space-y-2">
           <button 
             onClick={() => handleNav('settings')}
-            className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors">
+            className="w-full flex items-center gap-3 px-4 py-3 text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 rounded-xl transition-colors">
             <Settings size={20} />
             <span className="font-medium">设置</span>
           </button>

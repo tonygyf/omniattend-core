@@ -2,18 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Moon, Sun, Database, Server, Smartphone, Copy, Check } from 'lucide-react';
 
 const SettingsPage: React.FC = () => {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark'>(
+    () => document.documentElement.classList.contains('dark') ? 'dark' : 'light'
+  );
   const [copied, setCopied] = useState(false);
   const [healthData, setHealthData] = useState<any>(null);
   const [loadingHealth, setLoadingHealth] = useState(false);
-
-  // Initialize Theme from localStorage
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('theme') as 'light' | 'dark' | null;
-    const isDark = savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches);
-    setTheme(isDark ? 'dark' : 'light');
-    if (isDark) document.documentElement.classList.add('dark');
-  }, []);
 
   // Handle Theme Toggle
   const toggleTheme = (newTheme: 'light' | 'dark') => {
@@ -52,6 +46,21 @@ const SettingsPage: React.FC = () => {
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const getDbStatus = () => {
+    if (!healthData || !healthData.database) {
+      return { connected: false, text: '未知' };
+    }
+    const status = healthData.database.status?.toLowerCase();
+    const hasCount = typeof healthData.database.recordCount === 'number';
+
+    if (status === 'connected' || status === 'ok' || (healthData && hasCount && status !== 'disconnected')) {
+      return { connected: true, text: '已连接' };
+    }
+    return { connected: false, text: '连接失败' };
+  };
+
+  const dbStatus = getDbStatus();
 
   return (
     <div className="space-y-6 animate-fade-in dark:text-slate-200">
@@ -135,9 +144,9 @@ const SettingsPage: React.FC = () => {
               ) : (
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <div className={`w-2.5 h-2.5 rounded-full ${healthData?.database?.status === 'connected' ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    <div className={`w-2.5 h-2.5 rounded-full ${dbStatus.connected ? 'bg-green-500' : 'bg-red-500'}`}></div>
                     <span className="text-sm font-semibold capitalize text-slate-800 dark:text-white">
-                      {healthData?.database?.status || '未知'}
+                      {dbStatus.text}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
