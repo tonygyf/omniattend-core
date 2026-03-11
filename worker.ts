@@ -311,6 +311,7 @@ export default {
               email: teacher.email,
               name: teacher.name,
               avatarUri: teacher.avatarUri,
+              role: 'teacher', // Manually add role
               token: token 
             } 
           }, { headers: corsHeaders });
@@ -532,7 +533,12 @@ export default {
 
         // GET /api/classrooms
         if (path === "/api/classrooms" && method === "GET") {
-          const { results } = await env.DB.prepare("SELECT * FROM Classroom").all();
+          const { results } = await env.DB.prepare(`
+            SELECT c.*, COUNT(s.id) AS studentCount 
+            FROM Classroom c 
+            LEFT JOIN Student s ON c.id = s.classId 
+            GROUP BY c.id
+          `).all();
           return Response.json({ data: results }, { headers: corsHeaders });
         }
 
