@@ -7,6 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 API_SECRET = "my-secret-api-key"
+apikey = "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"
 
 # D1 数据库绑定
 [[d1_databases]]
