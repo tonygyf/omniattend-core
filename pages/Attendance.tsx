@@ -170,6 +170,34 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
   });
   const [constraints, setConstraints] = useState({ location: false, gesture: false, password: false });
   const [time, setTime] = useState({ start: new Date(), end: new Date(Date.now() + 30 * 60 * 1000) });
+  const [isFetchingLocation, setIsFetchingLocation] = useState(false);
+
+  const handleFetchLocation = () => {
+      if (!navigator.geolocation) {
+          toast.error("您的浏览器不支持地理位置功能。");
+          return;
+      }
+      setIsFetchingLocation(true);
+      navigator.geolocation.getCurrentPosition(
+          (position) => {
+              setTask({
+                  ...task,
+                  locationLat: parseFloat(position.coords.latitude.toFixed(5)),
+                  locationLng: parseFloat(position.coords.longitude.toFixed(5)),
+              });
+              if (!task.locationRadiusM) {
+                   setTask(prev => ({...prev, locationRadiusM: 100})); // Default radius
+              }
+              setIsFetchingLocation(false);
+              toast.success("已成功获取当前位置！");
+          },
+          (error) => {
+              toast.error(`获取位置失败: ${error.message}`);
+              setIsFetchingLocation(false);
+          },
+          { enableHighAccuracy: true }
+      );
+  };
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -240,10 +268,22 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
                 <span className="font-medium">地理位置签到</span>
               </label>
               {constraints.location && (
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 pl-8">
-                  <input type="number" value={task.locationLat || ''} onChange={e => setTask({...task, locationLat: parseFloat(e.target.value)})} placeholder="纬度 (e.g. 30.123)" className="input"/>
-                  <input type="number" value={task.locationLng || ''} onChange={e => setTask({...task, locationLng: parseFloat(e.target.value)})} placeholder="经度 (e.g. 120.456)" className="input"/>
-                  <input type="number" value={task.locationRadiusM || ''} onChange={e => setTask({...task, locationRadiusM: parseInt(e.target.value)})} placeholder="半径 (米)" className="input"/>
+                <div className="mt-4 pl-8 space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <input type="number" value={task.locationLat || ''} onChange={e => setTask({...task, locationLat: parseFloat(e.target.value)})} placeholder="纬度 (e.g. 30.123)" className="input"/>
+                        <input type="number" value={task.locationLng || ''} onChange={e => setTask({...task, locationLng: parseFloat(e.target.value)})} placeholder="经度 (e.g. 120.456)" className="input"/>
+                        <input type="number" value={task.locationRadiusM || ''} onChange={e => setTask({...task, locationRadiusM: parseInt(e.target.value)})} placeholder="半径 (米)" className="input"/>
+                    </div>
+                    <div >
+                        <button
+                            onClick={handleFetchLocation}
+                            disabled={isFetchingLocation}
+                            className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50 flex items-center gap-1.5"
+                        >
+                            {isFetchingLocation ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
+                            {isFetchingLocation ? '获取中...' : '获取当前位置'}
+                        </button>
+                    </div>
                 </div>
               )}
             </div>
