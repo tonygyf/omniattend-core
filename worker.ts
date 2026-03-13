@@ -1,7 +1,7 @@
 /**
  * Cloudflare Worker for FaceCheck Admin
  */
-import { createCheckinTask, getCheckinTasks, getCurrentUsers, getReviewQueue, reviewSubmission, submitCheckin } from './services/checkinService';
+import { createCheckinTask, getCheckinTasks, getCheckinTaskDetails, getReviewQueue, reviewSubmission, submitCheckin, closeCheckinTask } from './services/checkinService';
 
 export interface Env {
   DB: D1Database;
@@ -557,7 +557,7 @@ export default {
               .bind(body.id, body.teacherId, body.name, body.year, body.meta).run();
           } else {
             await env.DB.prepare("INSERT INTO Classroom (teacherId, name, year, meta) VALUES (?, ?, ?, ?)")
-              .bind(body.teacherId, body.name, body.year, body.meta).run();
+              .bind(body.teacherId, body.name, body.year, body.meta || null).run();
           }
           return Response.json({ ok: true }, { headers: corsHeaders });
         }
@@ -631,6 +631,18 @@ export default {
             }
         }
 
+        // POST /api/checkin/tasks/:id/close - Close a check-in task
+        const closeMatch = path.match(/^\/api\/checkin\/tasks\/(\d+)\/close$/);
+        if (closeMatch && method === "POST") {
+            try {
+                const taskId = parseInt(closeMatch[1], 10);
+                await closeCheckinTask(env.DB, taskId);
+                return Response.json({ success: true }, { headers: corsHeaders });
+            } catch (e: any) {
+                return Response.json({ error: e.message }, { status: 500, headers: corsHeaders });
+            }
+        }
+
         // POST /api/checkin/tasks/:id/submit - Submit a check-in
         const submitMatch = path.match(/^\/api\/checkin\/tasks\/(\d+)\/submit$/);
         if (submitMatch && method === "POST") {
@@ -649,8 +661,8 @@ export default {
         if (currentUsersMatch && method === "GET") {
             try {
                 const taskId = parseInt(currentUsersMatch[1], 10);
-                const users = await getCurrentUsers(env.DB, taskId);
-                return Response.json({ success: true, data: users }, { headers: corsHeaders });
+                const details = await getCheckinTaskDetails(env.DB, taskId);
+                return Response.json({ success: true, data: details }, { headers: corsHeaders });
             } catch (e: any) {
                 return Response.json({ error: e.message }, { status: 404, headers: corsHeaders });
             }

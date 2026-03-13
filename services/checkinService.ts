@@ -49,6 +49,14 @@ export async function getReviewQueue(db: D1Database, taskId: number) {
     return results || []; // Ensure an array is always returned
 }
 
+// 6. Close a Check-in Task
+export async function closeCheckinTask(db: D1Database, taskId: number) {
+    const ps = db.prepare(`
+        UPDATE CheckinTask SET status = 'CLOSED' WHERE id = ?
+    `).bind(taskId);
+    return await ps.run();
+}
+
 export async function getCheckinTasks(db: D1Database, params: { classId?: string; status?: string; }) {
     const { classId, status } = params;
 
@@ -144,14 +152,16 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
     return await ps.run();
 }
 
-// 3. Get Current Users for a Task
-export async function getCurrentUsers(db: D1Database, taskId: number) {
-    const task = await db.prepare("SELECT classId FROM CheckinTask WHERE id = ?").bind(taskId).first<any>();
+// 3. Get Check-in Task Details (Task, Summary, Users)
+export async function getCheckinTaskDetails(db: D1Database, taskId: number) {
+    // 1. Get task info
+    const task = await db.prepare("SELECT * FROM CheckinTask WHERE id = ?").bind(taskId).first<any>();
     if (!task) {
         throw new Error("Task not found.");
     }
 
-    const ps = db.prepare(`
+    // 2. Get user list with latest submission status
+    const usersRaw = await db.prepare(`
         SELECT
             s.id AS studentId,
             s.name,
@@ -162,10 +172,20 @@ export async function getCurrentUsers(db: D1Database, taskId: number) {
         FROM Student s
         LEFT JOIN CheckinSubmission sub ON s.id = sub.studentId AND sub.taskId = ? AND sub.isLatest = 1
         WHERE s.classId = ?
-    `).bind(taskId, task.classId);
+    `).bind(taskId, task.classId).all();
 
-    const { results } = await ps.all();
-    return results.map(row => ({ ...row, status: row.status || 'NOT_SUBMITTED' }));
+    const users = (usersRaw.results || []).map(row => ({ ...row, status: row.status || 'NOT_SUBMITTED' }));
+
+    // 3. Calculate summary
+    const summary = {
+        total: users.length,
+        signedIn: users.filter(u => u.status === 'APPROVED').length,
+        pendingReview: users.filter(u => u.status === 'PENDING_REVIEW').length,
+        rejected: users.filter(u => u.status === 'REJECTED').length,
+        notSubmitted: users.filter(u => u.status === 'NOT_SUBMITTED').length,
+    };
+
+    return { task, summary, users };
 }
 
 
