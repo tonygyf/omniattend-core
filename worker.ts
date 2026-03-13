@@ -1,7 +1,7 @@
 /**
  * Cloudflare Worker for FaceCheck Admin
  */
-import { createCheckinTask, getCheckinTasks, getCurrentUsers, reviewSubmission, submitCheckin } from './services/checkinService';
+import { createCheckinTask, getCheckinTasks, getCurrentUsers, getReviewQueue, reviewSubmission, submitCheckin } from './services/checkinService';
 
 export interface Env {
   DB: D1Database;
@@ -653,6 +653,18 @@ export default {
                 return Response.json({ success: true, data: users }, { headers: corsHeaders });
             } catch (e: any) {
                 return Response.json({ error: e.message }, { status: 404, headers: corsHeaders });
+            }
+        }
+
+        // GET /api/checkin/tasks/:id/review-queue - Get the review queue for a task
+        const reviewQueueMatch = path.match(/^\/api\/checkin\/tasks\/(\d+)\/review-queue$/);
+        if (reviewQueueMatch && method === "GET") {
+            try {
+                const taskId = parseInt(reviewQueueMatch[1], 10);
+                const queue = await getReviewQueue(env.DB, taskId);
+                return Response.json({ success: true, data: queue }, { headers: corsHeaders });
+            } catch (e: any) {
+                return Response.json({ error: e.message }, { status: 500, headers: corsHeaders });
             }
         }
 

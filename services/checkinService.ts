@@ -35,6 +35,20 @@ export async function createCheckinTask(db: D1Database, taskData: any) {
     return await ps.run();
 }
 
+// 5. Get Review Queue for a Task
+export async function getReviewQueue(db: D1Database, taskId: number) {
+    const ps = db.prepare(`
+        SELECT s.*, st.name as studentName, st.sid as studentSid
+        FROM CheckinSubmission s
+        JOIN Student st ON s.studentId = st.id
+        WHERE s.taskId = ? AND s.finalResult = 'PENDING_REVIEW' AND s.isLatest = 1
+        ORDER BY s.submittedAt ASC
+    `).bind(taskId);
+
+    const { results } = await ps.all();
+    return results || []; // Ensure an array is always returned
+}
+
 export async function getCheckinTasks(db: D1Database, params: { classId?: string; status?: string; }) {
     const { classId, status } = params;
 

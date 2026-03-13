@@ -406,10 +406,10 @@ const ActiveTaskDetails: React.FC<{ task: CheckinTask, onClose: () => void }> = 
                     <div className="p-6 space-y-4 border-b">
                         <h3 className="font-semibold text-slate-700">实时统计</h3>
                         <div className="grid grid-cols-2 gap-4">
-                            <StatCard icon={<UserCheck size={20}/>} label="已签到" value={details?.summary.signedIn || 0} color="border-green-200"/>
-                            <StatCard icon={<ShieldQuestion size={20}/>} label="待审核" value={details?.summary.pendingReview || 0} color="border-amber-200"/>
-                            <StatCard icon={<UserX size={20}/>} label="未通过" value={details?.summary.rejected || 0} color="border-red-200"/>
-                            <StatCard icon={<AlertCircle size={20}/>} label="未提交" value={details?.summary.notSubmitted || 0} color="border-slate-200"/>
+                            <StatCard icon={<UserCheck size={20}/>} label="已签到" value={details?.summary?.signedIn ?? 0} color="border-green-200"/>
+                            <StatCard icon={<ShieldQuestion size={20}/>} label="待审核" value={details?.summary?.pendingReview ?? 0} color="border-amber-200"/>
+                            <StatCard icon={<UserX size={20}/>} label="未通过" value={details?.summary?.rejected ?? 0} color="border-red-200"/>
+                            <StatCard icon={<AlertCircle size={20}/>} label="未提交" value={details?.summary?.notSubmitted ?? 0} color="border-slate-200"/>
                         </div>
                     </div>
                     {/* Review Queue */}
