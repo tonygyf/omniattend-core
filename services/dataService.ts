@@ -1,3 +1,4 @@
+import toast from 'react-hot-toast';
 import {
   User,
   AttendanceRecord,
@@ -109,6 +110,27 @@ export const fetchClassrooms = async (): Promise<Classroom[]> => {
   } catch (e) {
     console.warn('Classrooms API failed, using mock data', e);
     return generateMockClassrooms();
+  }
+};
+
+export const fetchStudentsByClass = async (classId: number): Promise<User[]> => {
+  try {
+    const { data } = await safeFetchJSON<any>(
+      `${API_BASE_URL}/api/students?classId=${classId}`
+    );
+    return (data || []).map((s: any) => ({
+      id: String(s.id),
+      name: s.name,
+      sid: s.sid,
+      department: '', // This will be provided by the parent component
+      role: 'student',
+      status: 'active',
+      avatarUrl: s.avatarUri,
+    }));
+  } catch (e) {
+    console.error(`Failed to fetch students for class ${classId}:`, e);
+    toast.error(`加载班级 ${classId} 的学生列表失败`);
+    return [];
   }
 };
 

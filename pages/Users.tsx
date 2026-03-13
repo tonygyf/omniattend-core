@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { User } from '../types';
 import { Search, Plus, Trash2, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { fetchStudentsByClass } from '../services/dataService';
 import { getFullImageUrl } from '../services/cdn';
 import Modal from '../components/Modal';
 
@@ -20,14 +21,28 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
   const [newUserSid, setNewUserSid] = useState('');
 
   useEffect(() => {
-    // 模拟根据 classId 加载学生
-    console.log(`Loading users for class ${classId}...`);
-    const mockUsers: User[] = [
-      { id: '1', name: '张三', sid: '20230101', department: className, role: 'student', status: 'active', avatarUrl: '' },
-      { id: '2', name: '李四', sid: '20230102', department: className, role: 'student', status: 'active', avatarUrl: '' },
-    ];
-    setUsers(mockUsers);
-    setLoading(false);
+    if (!classId) {
+      // 如果没有 classId，可以选择显示一个提示信息或直接返回
+      setLoading(false);
+      return;
+    }
+
+    const loadStudents = async () => {
+      setLoading(true);
+      try {
+        const studentsData = await fetchStudentsByClass(classId);
+        // 将班级名称设置到每个学生对象中
+        const studentsWithClassName = studentsData.map(s => ({ ...s, department: className }));
+        setUsers(studentsWithClassName);
+      } catch (error) {
+        // 错误已在 service 层处理和 toast
+        setUsers([]); // 清空数据以防显示旧数据
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadStudents();
   }, [classId, className]);
 
   const filteredUsers = users.filter(user => 

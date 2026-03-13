@@ -50,7 +50,10 @@ const AppContent = () => {
         return <UsersPage 
           classId={viewingClass?.id} 
           className={viewingClass?.name} 
-          onNavigateBack={() => setViewingClass(null)} 
+          onNavigateBack={() => {
+            setViewingClass(null);
+            setCurrentPage('classrooms');
+          }} 
         />;
       case 'attendance': return <AttendancePage />;
       case 'insights': return <AiInsights />;
