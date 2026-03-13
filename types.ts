@@ -11,6 +11,9 @@ export interface User {
   department: string;
   role: string;
   sid?: string;
+  email?: string;
+  password?: string;
+  gender?: 'M' | 'F' | 'O';
   avatarUrl?: string;
   status: 'active' | 'inactive';
   lastSeen?: string;
@@ -41,6 +44,8 @@ export interface DashboardStats {
   presentToday: number;
   lateToday: number;
   absentToday: number;
+  lateYesterday: number;
+  newStudentsThisWeek: number;
   weeklyTrend: { day: string; count: number }[];
 }
 

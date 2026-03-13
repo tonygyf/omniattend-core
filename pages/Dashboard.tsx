@@ -59,6 +59,10 @@ const Dashboard: React.FC = () => {
 
   if (!stats) return null;
 
+  // Calculate derived stats for trends
+  const attendanceRate = stats.totalUsers > 0 ? Math.round((stats.presentToday / stats.totalUsers) * 100) : 0;
+  const lateChange = stats.lateToday - stats.lateYesterday;
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -89,7 +93,7 @@ const Dashboard: React.FC = () => {
             value={stats.totalUsers} 
             icon={Users} 
             variant="blue"
-            trend="本周 +2"
+            trend={`本周 +${stats.newStudentsThisWeek}`}
           />
         </motion.div>
         <motion.div variants={itemVariants}>
@@ -98,7 +102,7 @@ const Dashboard: React.FC = () => {
             value={stats.presentToday} 
             icon={UserCheck} 
             variant="green"
-            trend="到勤率 84%"
+            trend={`到勤率 ${attendanceRate}%`}
           />
         </motion.div>
         <motion.div variants={itemVariants}>
@@ -107,7 +111,7 @@ const Dashboard: React.FC = () => {
             value={stats.lateToday} 
             icon={Clock} 
             variant="amber"
-            trend="较昨日 -2"
+            trend={lateChange !== 0 ? `较昨日 ${lateChange > 0 ? '+' : ''}${lateChange}` : '较昨日持平'}
           />
         </motion.div>
         <motion.div variants={itemVariants}>
@@ -116,7 +120,7 @@ const Dashboard: React.FC = () => {
             value={stats.absentToday} 
             icon={UserX} 
             variant="red"
-            trend="需要关注"
+            trend={stats.absentToday > 0 ? '需要关注' : '全员到齐'}
           />
         </motion.div>
       </motion.div>

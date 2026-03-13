@@ -121,8 +121,15 @@ export default {
             const absentRow = await env.DB.prepare(
               "SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Absent' AND date(decidedAt) = date('now')"
             ).first();
-            // lateToday不可用，数据库未定义迟到状态
-            const lateToday = 0;
+            const lateTodayRow = await env.DB.prepare(
+              "SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Late' AND date(decidedAt) = date('now')"
+            ).first();
+            const lateYesterdayRow = await env.DB.prepare(
+              "SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Late' AND date(decidedAt) = date('now', '-1 day')"
+            ).first();
+            const newStudentsThisWeekRow = await env.DB.prepare(
+              "SELECT COUNT(*) as count FROM Student WHERE createdAt >= datetime('now', '-7 days')"
+            ).first();
             
             // Weekly trend: last 7 days total results per day
             const { results: trendRows } = await env.DB.prepare(
@@ -143,8 +150,10 @@ export default {
             return Response.json({
               totalUsers: (totalUsersRow?.count as number) || 0,
               presentToday: (presentRow?.count as number) || 0,
-              lateToday,
+              lateToday: (lateTodayRow?.count as number) || 0,
               absentToday: (absentRow?.count as number) || 0,
+              lateYesterday: (lateYesterdayRow?.count as number) || 0,
+              newStudentsThisWeek: (newStudentsThisWeekRow?.count as number) || 0,
               weeklyTrend: days
             }, { headers: corsHeaders });
           } catch (e: any) {
@@ -529,11 +538,44 @@ export default {
              `).bind(body.id, body.classId, body.name, body.sid, body.gender, body.avatarUri).run();
           } else {
              await env.DB.prepare(`
-               INSERT INTO Student (classId, name, sid, gender, avatarUri)
-               VALUES (?, ?, ?, ?, ?)
-             `).bind(body.classId, body.name, body.sid, body.gender, body.avatarUri).run();
+               INSERT INTO Student (classId, name, sid, email, password, gender, avatarUri)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+             `).bind(body.classId, body.name, body.sid, body.email || null, body.password || null, body.gender || null, body.avatarUri || null).run();
           }
           return Response.json({ ok: true }, { headers: corsHeaders });
+        }
+
+        // POST /api/students/batch
+        if (path === "/api/students/batch" && method === "POST") {
+          try {
+            const body = await request.json() as { classId: number, students: any[] };
+            if (!body.classId || !Array.isArray(body.students) || body.students.length === 0) {
+              return Response.json({ error: "classId and a non-empty students array are required" }, { status: 400, headers: corsHeaders });
+            }
+
+            const stmt = env.DB.prepare(
+              `INSERT INTO Student (classId, name, sid, email, password, gender, avatarUri) VALUES (?, ?, ?, ?, ?, ?, ?)`
+            );
+            
+            const batch = body.students.map(s => 
+              stmt.bind(
+                body.classId,
+                s.name || null,
+                s.sid || null,
+                s.email || null,
+                s.password || null,
+                s.gender || null,
+                s.avatarUri || null
+              )
+            );
+
+            await env.DB.batch(batch);
+            return Response.json({ success: true, count: batch.length }, { headers: corsHeaders });
+
+          } catch (e: any) {
+            console.error("Batch student insert error:", e);
+            return Response.json({ error: "数据库批量写入失败" }, { status: 500, headers: corsHeaders });
+          }
         }
 
         // --- CLASSROOMS MODULE ---

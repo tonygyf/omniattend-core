@@ -32,6 +32,9 @@ CREATE TABLE Student (
     classId INTEGER NOT NULL,
     name TEXT NOT NULL,
     sid TEXT NOT NULL,
+    
+    email TEXT UNIQUE,
+    password TEXT,
     gender TEXT CHECK(gender IN ('M', 'F', 'O')),
     avatarUri TEXT,
     createdAt TEXT DEFAULT (CURRENT_TIMESTAMP),
