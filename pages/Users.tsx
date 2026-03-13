@@ -59,35 +59,36 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
   };
 
   const handleAddNewUser = async () => {
-    if (!newUserName.trim() || !newUserSid.trim()) {
-      alert('学生姓名和学号是必填项。');
+    if (!newUserName || !newUserSid) {
+      toast.error('学生姓名和学号是必填项。');
       return;
     }
     setIsSubmitting(true);
-    const result = await createStudent({
-      classId: classId,
-      name: newUserName,
-      sid: newUserSid,
-      email: newUserEmail || undefined,
-      password: newUserPassword || undefined,
-      gender: newUserGender || undefined,
-      avatarUrl: newUserAvatarUri || undefined,
-    });
-
-    if (result.success) {
-      await loadStudents(); // Reload the list from the server
+    try {
+      await createStudent({
+        name: newUserName,
+        sid: newUserSid,
+        email: newUserEmail || undefined,
+        password: newUserPassword || undefined,
+        gender: newUserGender || undefined,
+        avatarUrl: newUserAvatarUri || undefined,
+        classId: classId,
+      });
+      toast.success('学生新增成功！');
       setIsModalOpen(false);
-      // Reset form
+      loadStudents();
+      // Reset form state for next time
       setNewUserName('');
       setNewUserSid('');
       setNewUserEmail('');
       setNewUserPassword('');
       setNewUserGender('');
       setNewUserAvatarUri('');
-    } else {
-      alert(`创建失败: ${result.error}`);
+    } catch (error: any) {
+      toast.error(`新增失败: ${error.message || '未知错误'}`);
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   };
 
   return (

@@ -34,6 +34,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
   const [uploadStatus, setUploadStatus] = React.useState('');
   const [avatarPreview, setAvatarPreview] = React.useState('');
   const [avatarError, setAvatarError] = React.useState('');
+  const [avatarCacheKey, setAvatarCacheKey] = React.useState(Date.now());
 
   React.useEffect(() => {
     if (editOpen) {
@@ -108,6 +109,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
             login(updated);
             setEditAvatar(res.data.avatarUri);
             setAvatarFile(null);
+            setAvatarCacheKey(Date.now()); // Bust the cache!
         } else {
             toast.error(res.error || '头像上传失败', { id: uploadToast });
             setAvatarError(res.error || '头像上传失败');
@@ -130,7 +132,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
   })();
   const rawAvatar = (user as any)?.avatarUri || (user as any)?.avatarUrl;
   const normalizedAvatar = typeof rawAvatar === 'string' ? rawAvatar.trim() : '';
-  const candidate = getFullImageUrl(normalizedAvatar);
+  const candidate = getFullImageUrl(normalizedAvatar, avatarCacheKey);
   const avatarUrl = normalizedAvatar
     ? candidate
     : 'https://ui-avatars.com/api/?name=' + encodeURIComponent(user?.name || 'Teacher') + '&background=0D8ABC&color=fff';
@@ -250,7 +252,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">头像预览</label>
             <div className="flex items-center gap-4">
                 <img
-                  src={avatarPreview || avatarUrl}
+                  src={avatarPreview || getFullImageUrl(editAvatar, avatarCacheKey)}
                   alt="avatar preview"
                   className="w-24 h-24 rounded-full object-cover border-4 border-slate-200 dark:border-slate-700 shadow-sm"
                 />
