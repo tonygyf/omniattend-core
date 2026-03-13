@@ -169,6 +169,7 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
               value={newClassName}
               onChange={(e) => setNewClassName(e.target.value)}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg" 
+              autoComplete="off"
             />
           </div>
           <div>
@@ -178,6 +179,7 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
               value={newClassYear}
               onChange={(e) => setNewClassYear(Number(e.target.value))}
               className="w-full px-3 py-2 border border-slate-200 rounded-lg" 
+              autoComplete="off"
             />
           </div>
           <div className="flex justify-end pt-2">

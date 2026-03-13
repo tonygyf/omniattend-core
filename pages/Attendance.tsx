@@ -266,7 +266,7 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">任务标题</label>
-              <input type="text" value={task.title} onChange={(e) => setTask({...task, title: e.target.value})} className="w-full input" placeholder="例如：软件工程-课前签到"/>
+              <input type="text" value={task.title} onChange={(e) => setTask({...task, title: e.target.value})} className="w-full input" placeholder="例如：软件工程-课前签到" autoComplete="off"/>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">目标班级</label>
@@ -300,9 +300,9 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
               {constraints.location && (
                 <div className="mt-4 pl-8 space-y-3">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <input type="number" value={task.locationLat || ''} onChange={e => setTask({...task, locationLat: parseFloat(e.target.value)})} placeholder="纬度 (e.g. 30.123)" className="input"/>
-                        <input type="number" value={task.locationLng || ''} onChange={e => setTask({...task, locationLng: parseFloat(e.target.value)})} placeholder="经度 (e.g. 120.456)" className="input"/>
-                        <input type="number" value={task.locationRadiusM || ''} onChange={e => setTask({...task, locationRadiusM: parseInt(e.target.value)})} placeholder="半径 (米)" className="input"/>
+                        <input type="number" value={task.locationLat || ''} onChange={e => setTask({...task, locationLat: parseFloat(e.target.value)})} placeholder="纬度 (e.g. 30.123)" className="input" autoComplete="off"/>
+                        <input type="number" value={task.locationLng || ''} onChange={e => setTask({...task, locationLng: parseFloat(e.target.value)})} placeholder="经度 (e.g. 120.456)" className="input" autoComplete="off"/>
+                        <input type="number" value={task.locationRadiusM || ''} onChange={e => setTask({...task, locationRadiusM: parseInt(e.target.value)})} placeholder="半径 (米)" className="input" autoComplete="off"/>
                     </div>
                     <div >
                         <button
@@ -326,7 +326,7 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
               </label>
               {constraints.gesture && (
                 <div className="mt-4 pl-8">
-                  <input type="text" value={task.gestureSequence || ''} onChange={e => setTask({...task, gestureSequence: e.target.value})} placeholder="输入手势序列, e.g., 1-5-9-3" className="input w-full md:w-1/2"/>
+                  <input type="text" value={task.gestureSequence || ''} onChange={e => setTask({...task, gestureSequence: e.target.value})} placeholder="输入手势序列, e.g., 1-5-9-3" className="input w-full md:w-1/2" autoComplete="off"/>
                 </div>
               )}
             </div>
@@ -339,7 +339,7 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
               </label>
               {constraints.password && (
                 <div className="mt-4 pl-8">
-                  <input type="text" value={task.passwordPlain || ''} onChange={e => setTask({...task, passwordPlain: e.target.value})} placeholder="输入签到口令, e.g., 芝麻开门" className="input w-full md:w-1/2"/>
+                  <input type="text" value={task.passwordPlain || ''} onChange={e => setTask({...task, passwordPlain: e.target.value})} placeholder="输入签到口令, e.g., 芝麻开门" className="input w-full md:w-1/2" autoComplete="off"/>
                 </div>
               )}
             </div>

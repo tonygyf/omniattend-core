@@ -202,20 +202,20 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">学生姓名 <span className="text-red-500">*</span></label>
-              <input type="text" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+              <input type="text" value={newUserName} onChange={(e) => setNewUserName(e.target.value)} className="w-full px-3 py-2 border rounded-lg" autoComplete="off" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-600 mb-1">学号 <span className="text-red-500">*</span></label>
-              <input type="text" value={newUserSid} onChange={(e) => setNewUserSid(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+              <input type="text" value={newUserSid} onChange={(e) => setNewUserSid(e.target.value)} className="w-full px-3 py-2 border rounded-lg" autoComplete="off" />
             </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">邮箱 (可选)</label>
-            <input type="email" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+            <input type="email" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} className="w-full px-3 py-2 border rounded-lg" autoComplete="off" />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-600 mb-1">初始密码 (可选)</label>
-            <input type="password" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} className="w-full px-3 py-2 border rounded-lg" />
+            <input type="password" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} className="w-full px-3 py-2 border rounded-lg" autoComplete="new-password" />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
