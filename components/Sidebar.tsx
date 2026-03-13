@@ -137,7 +137,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
   
   const navItems = [
     { id: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
-    { id: 'users', label: '学生管理', icon: Users },
+    { id: 'classrooms', label: '班级管理', icon: Users },
     { id: 'attendance', label: '考勤与签到', icon: History },
     { id: 'insights', label: 'AI 洞察', icon: BrainCircuit },
   ];

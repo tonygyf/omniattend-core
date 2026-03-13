@@ -27,7 +27,7 @@ import toast from 'react-hot-toast';
 const AttendancePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeTasks, setActiveTasks] = useState<CheckinTask[]>([]);
-  const [reviewableSubmissions, setReviewableSubmissions] = useState<CheckinSubmission[]>([]);
+  const [closedTasks, setClosedTasks] = useState<CheckinTask[]>([]);
   const [selectedTask, setSelectedTask] = useState<CheckinTask | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   
@@ -36,14 +36,16 @@ const AttendancePage: React.FC = () => {
   const loadData = async () => {
     if (!auth?.user?.id) return;
     setLoading(true);
-    const [active, reviewable] = await Promise.all([
-      fetchCheckinTasks(undefined, 'ACTIVE'),
-      fetchCheckinTasks(undefined, 'PENDING_REVIEW')
-    ]);
-    setActiveTasks(active);
-    // To get all reviewable items, we would need a new endpoint.
-    // Let's focus on the per-task review queue for now.
-    setLoading(false);
+    try {
+      const allTasks = await fetchCheckinTasks(); // Fetch all tasks
+      setActiveTasks(allTasks.filter(t => t.status === 'ACTIVE'));
+      setClosedTasks(allTasks.filter(t => t.status === 'CLOSED'));
+    } catch (error) {
+      console.error("Failed to load tasks:", error);
+      toast.error("加载任务列表失败");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -94,6 +96,28 @@ const AttendancePage: React.FC = () => {
           )
         }
       </div>
+
+      {/* Closed Tasks */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100">
+        <div className="p-6 border-b border-slate-100">
+          <h2 className="text-xl font-semibold text-slate-800 flex items-center gap-3">
+            <XCircle className="w-6 h-6 text-slate-400" /> 已结束的任务
+          </h2>
+        </div>
+        {loading ? <div className="p-6 text-center text-slate-500">加载中...</div> : 
+          closedTasks.length > 0 ? (
+            <div className="divide-y divide-slate-100">
+              {closedTasks.map((task) => (
+                <TaskItem key={task.id} task={task} onSelect={() => setSelectedTask(task)} onClose={loadData}/>
+              ))}
+            </div>
+          ) : (
+            <div className="p-10 text-center text-slate-500">
+              <p>没有已结束的签到任务。</p>
+            </div>
+          )
+        }
+      </div>
       
       {/* Modals */}
       {showCreateModal && (
@@ -135,7 +159,11 @@ const TaskItem: React.FC<{ task: CheckinTask; onSelect: () => void; onClose: () 
         <div className="space-y-2">
           <div className="flex items-center gap-3">
             <h3 className="font-semibold text-lg text-slate-900">{task.title}</h3>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200"><CheckCircle2 size={12}/> 进行中</span>
+            {task.status === 'ACTIVE' ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-200"><CheckCircle2 size={12}/> 进行中</span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200"><XCircle size={12}/> 已结束</span>
+            )}
           </div>
           <div className="text-sm text-slate-600 flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-2"><Clock size={14} /><span>{new Date(task.startAt).toLocaleString('zh-CN')} - {new Date(task.endAt).toLocaleString('zh-CN')}</span></div>
@@ -149,10 +177,12 @@ const TaskItem: React.FC<{ task: CheckinTask; onSelect: () => void; onClose: () 
             <Eye size={14} />
             查看详情
           </button>
-          <button onClick={handleClose} disabled={isClosing} className="px-4 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
-            {isClosing ? <Loader2 size={14} className="animate-spin"/> : <XCircle size={14}/>}
-            关闭任务
-          </button>
+          {task.status === 'ACTIVE' && (
+            <button onClick={handleClose} disabled={isClosing} className="px-4 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center gap-1.5 disabled:opacity-50">
+              {isClosing ? <Loader2 size={14} className="animate-spin"/> : <XCircle size={14}/>}
+              关闭任务
+            </button>
+          )}
         </div>
       </div>
     </div>

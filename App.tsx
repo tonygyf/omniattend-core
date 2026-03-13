@@ -41,16 +41,17 @@ const AppContent = () => {
   const renderPage = () => {
     switch (currentPage) {
       case 'dashboard': return <Dashboard />;
+      case 'classrooms': 
+        return <ClassroomPage onNavigateToClass={(id, name) => {
+          setViewingClass({ id, name });
+          setCurrentPage('users');
+        }} />;
       case 'users': 
-        if (viewingClass) {
-          return <UsersPage 
-            classId={viewingClass.id} 
-            className={viewingClass.name} 
-            onNavigateBack={() => setViewingClass(null)} 
-          />;
-        } else {
-          return <ClassroomPage onNavigateToClass={(id, name) => setViewingClass({ id, name })} />;
-        }
+        return <UsersPage 
+          classId={viewingClass?.id} 
+          className={viewingClass?.name} 
+          onNavigateBack={() => setViewingClass(null)} 
+        />;
       case 'attendance': return <AttendancePage />;
       case 'insights': return <AiInsights />;
       case 'settings': return <SettingsPage />;
