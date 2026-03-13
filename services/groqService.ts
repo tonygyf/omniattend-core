@@ -32,6 +32,6 @@ export async function generateAttendanceInsights(
     throw error;
   }
 
-  const data = await res.json();
+  const data: { result: string } = await res.json();
   return data.result;
 }

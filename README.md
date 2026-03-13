@@ -23,15 +23,32 @@
 
 ## 📸 项目截图
 
-> *请在项目运行后截图并替换以下链接*
-
-| 登录页面 | 仪表盘概览 |
+| 登录 (Login) | 注册 (Register) |
 | :---: | :---: |
-| ![Login](https://via.placeholder.com/600x400?text=Login+Page) | ![Dashboard](https://via.placeholder.com/600x400?text=Dashboard+Screenshot) |
+| ![Login](./photos/login.png) | ![Register](./photos/register.png) |
 
-| 员工管理 | AI 智能分析 |
+| 仪表盘 (Dashboard) | AI 智能洞察 (AI Insight) |
 | :---: | :---: |
-| ![Users](https://via.placeholder.com/600x400?text=User+Management) | ![Insights](https://via.placeholder.com/600x400?text=AI+Insights) |
+| ![Dashboard](./photos/dashboard.png) | ![AI Insight](./photos/aisight.png) |
+
+### 班级管理 (Class Management)
+支持列表和卡片两种视图，点击卡片可进入班级详情。
+
+| 列表视图 (List View) | 卡片视图 (Card View) | 班级详情 (Class Details) |
+| :---: | :---: | :---: |
+| ![Class List View](./photos/classmanage-list.png) | ![Class Card View](./photos/classmanage-card.png) | ![Class Details](./photos/card-inside.png) |
+
+| 签到任务 (Check-in Task) | 个人资料 (Profile) |
+| :---: | :---: |
+| ![Check-in Task](./photos/checkin.png) | ![Profile](./photos/profile.png) |
+
+### 主题切换 (Theme Switching)
+
+支持浅色与深色模式一键切换。
+
+| 浅色模式 (Light) | 深色模式 (Dark) |
+| :---: | :---: |
+| ![Light Mode](./photos/light.png) | ![Dark Mode](./photos/dark.png) |
 
 ---
 

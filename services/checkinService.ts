@@ -1,9 +1,7 @@
 
 import { calculateHaversineDistance } from './validationService';
 
-export interface Env {
-    DB: D1Database;
-}
+
 
 // 1. Create Check-in Task
 export async function createCheckinTask(db: D1Database, taskData: any) {
@@ -35,6 +33,29 @@ export async function createCheckinTask(db: D1Database, taskData: any) {
     );
 
     return await ps.run();
+}
+
+export async function getCheckinTasks(db: D1Database, params: { classId?: string; status?: string; }) {
+    const { classId, status } = params;
+
+    let query = "SELECT * FROM CheckinTask WHERE 1=1";
+    const queryParams: any[] = [];
+
+    if (classId) {
+        query += " AND classId = ?";
+        queryParams.push(classId);
+    }
+
+    if (status) {
+        query += " AND status = ?";
+        queryParams.push(status);
+    }
+
+    query += " ORDER BY id DESC";
+
+    const ps = db.prepare(query).bind(...queryParams);
+    const { results } = await ps.all();
+    return results;
 }
 
 // 2. Submit Check-in
@@ -136,22 +157,24 @@ export async function getCurrentUsers(db: D1Database, taskId: number) {
 
 // 4. Review a Submission
 export async function reviewSubmission(db: D1Database, submissionId: number, reviewData: any) {
-    const { manualResult, finalResult, reviewerId, reviewedAt, reason } = reviewData;
+    const { action, reviewerId, reason } = reviewData;
 
-    if (!manualResult || !finalResult || !reviewerId || !reviewedAt) {
-        throw new Error("manualResult, finalResult, reviewerId, and reviewedAt are required.");
+    if (!action || !['approve', 'reject'].includes(action) || !reviewerId) {
+        throw new Error("action ('approve' or 'reject') and reviewerId are required.");
     }
-    
+
+    const manualResult = action === 'approve' ? 'APPROVED' : 'REJECTED';
+    const finalResult = manualResult; // The final result is the same as the manual one
+
     const ps = db.prepare(`
         UPDATE CheckinSubmission
-        SET manualResult = ?, finalResult = ?, reviewerId = ?, reviewedAt = ?, reason = ?
-        WHERE id = ?
+        SET manualResult = ?, finalResult = ?, reviewerId = ?, reviewedAt = datetime('now'), reason = ?
+        WHERE id = ? AND finalResult = 'PENDING_REVIEW'
     `).bind(
         manualResult,
         finalResult,
         reviewerId,
-        reviewedAt,
-        reason || null,
+        reason || null, // Use the provided reason, or null if not given
         submissionId
     );
 

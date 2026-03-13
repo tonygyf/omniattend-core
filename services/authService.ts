@@ -40,7 +40,7 @@ export const loginAdmin = async (email: string, password: string): Promise<ApiRe
       body: JSON.stringify({ username: email, password }),
     });
 
-    const data = await res.json();
+    const data: any = await res.json();
     if (!res.ok) {
       return { success: false, error: data.error || 'Login failed' };
     }
@@ -63,7 +63,7 @@ export const updateProfileAvatar = async (teacherId: string, file: File, key: st
       },
       body: form
     });
-    const data = await res.json();
+    const data: any = await res.json();
     if (!res.ok) {
       return { success: false, error: data.error || 'Avatar update failed' };
     }
@@ -84,7 +84,7 @@ export const registerAdmin = async (email: string, password: string): Promise<Ap
       body: JSON.stringify({ email, password }),
     });
 
-    const data = await res.json();
+    const data: any = await res.json();
     if (!res.ok) {
       return { success: false, error: data.error || 'Registration failed' };
     }
@@ -110,7 +110,7 @@ export const sendEmailVerificationCode = async (email: string): Promise<ApiRespo
       body: JSON.stringify({ email }),
     });
 
-    const data = await res.json();
+    const data: any = await res.json();
     if (!res.ok) {
       return { success: false, error: data.error || 'Failed to send verification code' };
     }
@@ -134,7 +134,7 @@ export const verifyEmailCode = async (email: string, code: string): Promise<ApiR
       body: JSON.stringify({ email, code }),
     });
 
-    const data = await res.json();
+    const data: any = await res.json();
     if (!res.ok) {
       return { success: false, error: data.error || 'Verification failed' };
     }

@@ -290,7 +290,7 @@ export const createCheckinTask = async (task: CreateCheckinTaskRequest): Promise
       body: JSON.stringify(task)
     });
     
-    const data = await res.json();
+    const data: any = await res.json();
     if (!res.ok) {
       return { success: false, error: data.error || '创建任务失败' };
     }
@@ -321,7 +321,7 @@ export const closeCheckinTask = async (taskId: number): Promise<{ success: boole
       headers: { 'X-API-Key': API_KEY }
     });
     
-    const data = await res.json();
+    const data: any = await res.json();
     if (!res.ok) {
       return { success: false, error: data.error || '关闭任务失败' };
     }
@@ -343,7 +343,7 @@ export const submitCheckin = async (submission: CheckinSubmissionRequest): Promi
       body: JSON.stringify(submission)
     });
     
-    const data = await res.json();
+    const data: any = await res.json();
     if (!res.ok) {
       return { success: false, error: data.error || '提交签到失败' };
     }
@@ -387,7 +387,7 @@ export const reviewSubmission = async (submissionId: number, review: ReviewSubmi
       body: JSON.stringify(review)
     });
 
-    const data = await res.json();
+    const data: any = await res.json();
     if (!res.ok) {
       return { success: false, error: data.error || '审核失败' };
     }
