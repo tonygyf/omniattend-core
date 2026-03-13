@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Edit, LayoutGrid, List } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '../components/Modal';
-import { fetchClassrooms, fetchAllStudents } from '../services/dataService';
+import { fetchClassrooms, fetchAllStudents, createClassroom } from '../services/dataService';
 import { Classroom, User } from '../types';
 
 interface ClassroomPageProps {
@@ -23,16 +23,28 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
   const [newClassName, setNewClassName] = useState('');
   const [newClassYear, setNewClassYear] = useState(new Date().getFullYear());
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const loadClassrooms = async () => {
+    try {
+      const classData = await fetchClassrooms();
+      setClassrooms(classData);
+    } catch (error) {
+      console.error("Failed to load classrooms:", error);
+    }
+  };
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
       try {
-        const [classData, studentData] = await Promise.all([
-          fetchClassrooms(),
-          fetchAllStudents(),
+        await Promise.all([
+          loadClassrooms(),
+          (async () => {
+            const studentData = await fetchAllStudents();
+            setStudents(studentData);
+          })()
         ]);
-        setClassrooms(classData);
-        setStudents(studentData);
       } catch (error) {
         console.error("Failed to load data:", error);
       } finally {
@@ -46,22 +58,27 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
     localStorage.setItem('classroom_view_mode', viewMode);
   }, [viewMode]);
 
-  const handleAddClass = () => {
+  const handleAddClass = async () => {
     if (!newClassName.trim()) {
       alert('班级名称不能为空。');
       return;
     }
-    const newClass: Classroom = {
-      id: Date.now(),
+    setIsSubmitting(true);
+    const result = await createClassroom({
       name: newClassName,
       year: newClassYear,
-      studentCount: 0,
-      teacherId: 1, // Default teacherId
-    };
-    setClassrooms(prev => [newClass, ...prev]);
-    setIsModalOpen(false);
-    setNewClassName('');
-    setNewClassYear(new Date().getFullYear());
+      teacherId: 1, // Assuming teacherId is 1 for now
+    });
+
+    if (result.success) {
+      await loadClassrooms(); // Reload the list from the server
+      setIsModalOpen(false);
+      setNewClassName('');
+      setNewClassYear(new Date().getFullYear());
+    } else {
+      alert(`创建失败: ${result.error}`);
+    }
+    setIsSubmitting(false);
   };
 
   const handleDeleteClass = (classId: number) => {
@@ -164,7 +181,9 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
             />
           </div>
           <div className="flex justify-end pt-2">
-            <button onClick={handleAddClass} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">确认新增</button>
+            <button onClick={handleAddClass} disabled={isSubmitting} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:bg-blue-400">
+              {isSubmitting ? '正在提交...' : '确认新增'}
+            </button>
           </div>
         </div>
       </Modal>

@@ -112,6 +112,27 @@ export const fetchClassrooms = async (): Promise<Classroom[]> => {
   }
 };
 
+export const createClassroom = async (classroom: Omit<Classroom, 'id' | 'studentCount'>): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/classrooms`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY
+      },
+      body: JSON.stringify(classroom)
+    });
+    const data: any = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || '创建班级失败' };
+    }
+    return { success: true };
+  } catch (e) {
+    console.error('Create classroom error:', e);
+    return { success: false, error: '网络错误' };
+  }
+};
+
 export const fetchAllStudents = async (): Promise<User[]> => {
   if (USE_MOCK) {
     await delay();
