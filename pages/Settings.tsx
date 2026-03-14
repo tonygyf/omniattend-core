@@ -48,13 +48,12 @@ const SettingsPage: React.FC = () => {
   };
 
   const getDbStatus = () => {
-    if (!healthData || !healthData.database) {
+    if (!healthData || !healthData.database || !healthData.database.status) {
       return { connected: false, text: '未知' };
     }
-    const status = healthData.database.status?.toLowerCase();
-    const hasCount = typeof healthData.database.recordCount === 'number';
+    const status = healthData.database.status.toLowerCase();
 
-    if (status === 'connected' || status === 'ok' || (healthData && hasCount && status !== 'disconnected')) {
+    if (status === 'connected') {
       return { connected: true, text: '已连接' };
     }
     return { connected: false, text: '连接失败' };
