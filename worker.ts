@@ -533,17 +533,25 @@ export default {
           const body = await request.json() as any;
           // Upsert logic: If ID provided, update; else insert
           // For simplicity in D1, we use INSERT OR REPLACE if ID exists, or standard insert
+          let studentId = body.id;
           if (body.id) {
              await env.DB.prepare(`
                INSERT OR REPLACE INTO Student (id, classId, name, sid, gender, avatarUri)
                VALUES (?, ?, ?, ?, ?, ?)
              `).bind(body.id, body.classId, body.name, body.sid, body.gender, body.avatarUri).run();
           } else {
-             await env.DB.prepare(`
+             const studentRes = await env.DB.prepare(`
                INSERT INTO Student (classId, name, sid, email, password, gender, avatarUri)
                VALUES (?, ?, ?, ?, ?, ?, ?)
              `).bind(body.classId, body.name, body.sid, body.email || null, body.password || null, body.gender || null, body.avatarUri || null).run();
+             studentId = studentRes.meta.last_row_id;
           }
+
+          if (studentId) {
+            await env.DB.prepare("INSERT INTO SyncLog (entity, entityId, op, version, status) VALUES (?, ?, ?, ?, ?)")
+              .bind('Student', studentId, 'UPSERT', Date.now(), 'pending').run();
+          }
+
           return Response.json({ ok: true }, { headers: corsHeaders });
         }
 
@@ -571,7 +579,14 @@ export default {
               )
             );
 
-            await env.DB.batch(batch);
+            const results = await env.DB.batch(batch);
+
+            // Log sync for batch created students
+            const lastIds = results.map(r => r.meta.last_row_id);
+            const syncStmt = env.DB.prepare("INSERT INTO SyncLog (entity, entityId, op, version, status) VALUES (?, ?, ?, ?, ?)");
+            const syncBatch = lastIds.map(id => syncStmt.bind('Student', id, 'UPSERT', Date.now(), 'pending'));
+            await env.DB.batch(syncBatch);
+
             return Response.json({ success: true, count: batch.length }, { headers: corsHeaders });
 
           } catch (e: any) {
@@ -882,6 +897,68 @@ export default {
             console.error('Error in /api/insights:', e);
             return Response.json({ error: "处理 AI 洞察请求时发生内部错误" }, { status: 500, headers: corsHeaders });
           }
+        }
+
+        // --- SYNC DELTA ROUTES ---
+
+        // GET /api/v1/students/delta
+        if (path === "/api/v1/students/delta" && method === "GET") {
+          const lastSyncTimestamp = parseInt(url.searchParams.get("lastSyncTimestamp") || "0", 10);
+          const now = Date.now();
+
+          const logs = await env.DB.prepare(
+            `SELECT * FROM SyncLog WHERE entity = 'Student' AND version > ? ORDER BY version ASC`
+          ).bind(lastSyncTimestamp).all<any>();
+
+          const addedOrUpdatedIds = logs.results.filter(l => l.op === 'UPSERT').map(l => l.entityId);
+          const deletedStudentIds = logs.results.filter(l => l.op === 'DELETE').map(l => l.entityId);
+
+          let addedOrUpdatedStudents: any[] = [];
+          if (addedOrUpdatedIds.length > 0) {
+            const studentResults = await env.DB.prepare(
+              `SELECT * FROM Student WHERE id IN (${addedOrUpdatedIds.join(',')})`
+            ).all();
+            addedOrUpdatedStudents = studentResults.results;
+          }
+
+          return Response.json({
+            newLastSyncTimestamp: now,
+            addedStudents: addedOrUpdatedStudents.filter(s => new Date(s.createdAt).getTime() > lastSyncTimestamp),
+            updatedStudents: addedOrUpdatedStudents.filter(s => new Date(s.createdAt).getTime() <= lastSyncTimestamp),
+            deletedStudentIds: deletedStudentIds,
+            hasMore: false, // Pagination not implemented for simplicity
+            totalChanges: logs.results.length,
+          }, { headers: corsHeaders });
+        }
+
+        // GET /api/v1/classes/delta
+        if (path === "/api/v1/classes/delta" && method === "GET") {
+          const lastSyncTimestamp = parseInt(url.searchParams.get("lastSyncTimestamp") || "0", 10);
+          const now = Date.now();
+
+          const logs = await env.DB.prepare(
+            `SELECT * FROM SyncLog WHERE entity = 'Classroom' AND version > ? ORDER BY version ASC`
+          ).bind(lastSyncTimestamp).all<any>();
+
+          const addedOrUpdatedIds = logs.results.filter(l => l.op === 'UPSERT').map(l => l.entityId);
+          const deletedClassIds = logs.results.filter(l => l.op === 'DELETE').map(l => l.entityId);
+
+          let addedOrUpdatedClasses: any[] = [];
+          if (addedOrUpdatedIds.length > 0) {
+            const classResults = await env.DB.prepare(
+              `SELECT * FROM Classroom WHERE id IN (${addedOrUpdatedIds.join(',')})`
+            ).all();
+            addedOrUpdatedClasses = classResults.results;
+          }
+
+          return Response.json({
+            newLastSyncTimestamp: now,
+            addedClasses: addedOrUpdatedClasses.filter(c => new Date(c.createdAt).getTime() > lastSyncTimestamp),
+            updatedClasses: addedOrUpdatedClasses.filter(c => new Date(c.createdAt).getTime() <= lastSyncTimestamp),
+            deletedClassIds: deletedClassIds,
+            hasMore: false, // Pagination not implemented for simplicity
+            totalChanges: logs.results.length,
+          }, { headers: corsHeaders });
         }
 
         return new Response("API Not Found", { status: 404, headers: corsHeaders });
