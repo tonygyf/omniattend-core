@@ -91,7 +91,9 @@ export default {
 
              // Step 2: If connected, get the actual count.
              const result = await env.DB.prepare("SELECT COUNT(*) as count FROM Teacher").first();
-             userCount = result.count as number;
+             if (result) {
+              userCount = result.count as number;
+            }
 
           } catch (e) {
              console.error("DB Health Check Failed:", e);

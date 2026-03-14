@@ -190,6 +190,9 @@ const TaskItem: React.FC<{ task: CheckinTask; onSelect: () => void; onClose: () 
 };
 
 // Modal for creating a new task
+import MapPicker from '../components/MapPicker';
+import GesturePad from '../components/GesturePad';
+
 const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }> = ({ onClose, onCreated }) => {
   const auth = useAuth();
   const [loading, setLoading] = useState(false);
@@ -202,6 +205,8 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
   const [time, setTime] = useState({ start: new Date(), end: new Date(Date.now() + 30 * 60 * 1000) });
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
 
+  const [selectedAddress, setSelectedAddress] = useState('尚未选择位置');
+
   const handleFetchLocation = () => {
       if (!navigator.geolocation) {
           toast.error("您的浏览器不支持地理位置功能。");
@@ -210,19 +215,27 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
       setIsFetchingLocation(true);
       navigator.geolocation.getCurrentPosition(
           (position) => {
+              const location = {
+                  lat: parseFloat(position.coords.latitude.toFixed(5)),
+                  lng: parseFloat(position.coords.longitude.toFixed(5)),
+              };
               setTask({
                   ...task,
-                  locationLat: parseFloat(position.coords.latitude.toFixed(5)),
-                  locationLng: parseFloat(position.coords.longitude.toFixed(5)),
+                  locationLat: location.lat,
+                  locationLng: location.lng,
               });
               if (!task.locationRadiusM) {
                    setTask(prev => ({...prev, locationRadiusM: 100})); // Default radius
               }
               setIsFetchingLocation(false);
-              toast.success("已成功获取当前位置！");
+              toast.success("已成功获取当前位置并居中地图！");
           },
           (error) => {
-              toast.error(`获取位置失败: ${error.message}`);
+              let errorMessage = '获取位置失败，请重试或手动在地图上选点。';
+              if (error.code === error.PERMISSION_DENIED) {
+                  errorMessage = '您已拒绝位置权限，请在浏览器设置中开启后重试。';
+              }
+              toast.error(errorMessage);
               setIsFetchingLocation(false);
           },
           { enableHighAccuracy: true }
@@ -299,21 +312,26 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
               </label>
               {constraints.location && (
                 <div className="mt-4 pl-8 space-y-3">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <input type="number" value={task.locationLat || ''} onChange={e => setTask({...task, locationLat: parseFloat(e.target.value)})} placeholder="纬度 (e.g. 30.123)" className="input" autoComplete="off"/>
-                        <input type="number" value={task.locationLng || ''} onChange={e => setTask({...task, locationLng: parseFloat(e.target.value)})} placeholder="经度 (e.g. 120.456)" className="input" autoComplete="off"/>
-                        <input type="number" value={task.locationRadiusM || ''} onChange={e => setTask({...task, locationRadiusM: parseInt(e.target.value)})} placeholder="半径 (米)" className="input" autoComplete="off"/>
-                    </div>
-                    <div >
-                        <button
-                            onClick={handleFetchLocation}
-                            disabled={isFetchingLocation}
-                            className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50 flex items-center gap-1.5"
-                        >
-                            {isFetchingLocation ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
-                            {isFetchingLocation ? '获取中...' : '获取当前位置'}
-                        </button>
-                    </div>
+                  <MapPicker 
+                    onLocationChange={({ lat, lng, address }) => {
+                      setTask({ ...task, locationLat: lat, locationLng: lng });
+                      setSelectedAddress(address);
+                    }}
+                    initialLocation={task.locationLat && task.locationLng ? { lat: task.locationLat, lng: task.locationLng } : undefined}
+                  />
+                  <div className="grid grid-cols-2 gap-3 items-center">
+                    <input type="text" value={selectedAddress} readOnly className="input text-sm text-slate-500 bg-slate-50"/>
+                    <input type="number" value={task.locationRadiusM || ''} onChange={e => setTask({...task, locationRadiusM: parseInt(e.target.value)})} placeholder="半径 (米)" className="input" autoComplete="off"/>
+                  </div>
+                  <button
+                      type="button"
+                      onClick={handleFetchLocation}
+                      disabled={isFetchingLocation}
+                      className="text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                      {isFetchingLocation ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
+                      {isFetchingLocation ? '获取中...' : '获取浏览器当前位置'}
+                  </button>
                 </div>
               )}
             </div>
@@ -325,8 +343,12 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
                 <span className="font-medium">手势序列签到</span>
               </label>
               {constraints.gesture && (
-                <div className="mt-4 pl-8">
-                  <input type="text" value={task.gestureSequence || ''} onChange={e => setTask({...task, gestureSequence: e.target.value})} placeholder="输入手势序列, e.g., 1-5-9-3" className="input w-full md:w-1/2" autoComplete="off"/>
+                <div className="mt-4 flex justify-center">
+                  <GesturePad 
+                    onSequenceChange={(sequence) => {
+                      setTask(prev => ({ ...prev, gestureSequence: sequence }));
+                    }}
+                  />
                 </div>
               )}
             </div>

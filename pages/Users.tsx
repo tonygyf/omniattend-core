@@ -9,8 +9,8 @@ import Modal from '../components/Modal';
 import toast from 'react-hot-toast';
 
 interface UsersPageProps {
-  classId: number;
-  className: string;
+  classId?: number;
+  className?: string;
   onNavigateBack: () => void;
 }
 
@@ -33,7 +33,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
     setLoading(true);
     try {
       const studentsData = await fetchStudentsByClass(classId);
-      const studentsWithClassName = studentsData.map(s => ({ ...s, department: className }));
+      const studentsWithClassName = studentsData.map(s => ({ ...s, department: className || '' }));
       setUsers(studentsWithClassName);
     } catch (error) {
       setUsers([]);
@@ -45,6 +45,19 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
   useEffect(() => {
     loadStudents();
   }, [loadStudents]);
+
+  if (!classId || !className) {
+    return (
+      <div className="text-center p-8">
+        <h2 className="text-xl text-slate-600">未选择班级</h2>
+        <p className="text-slate-500 mt-2">请先从班级列表选择一个班级进行查看。</p>
+        <button onClick={onNavigateBack} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg">
+          返回班级列表
+        </button>
+      </div>
+    );
+  }
+
 
   const filteredUsers = users.filter(user => 
     user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
