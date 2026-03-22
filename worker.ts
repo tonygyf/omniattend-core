@@ -335,6 +335,52 @@ export default {
           }, { headers: corsHeaders });
         }
 
+        // 4. PUT /api/auth/change-password (Teacher Change Password)
+        if (path === "/api/auth/change-password" && method === "PUT") {
+          const body = await request.json() as any;
+          const { teacherId, oldPassword, newPassword } = body;
+
+          if (!teacherId || !oldPassword || !newPassword) {
+            return Response.json({ error: "Missing teacherId, oldPassword, or newPassword" }, { status: 400, headers: corsHeaders });
+          }
+
+          const teacher = await env.DB.prepare("SELECT * FROM Teacher WHERE id = ?").bind(teacherId).first<any>();
+
+          if (!teacher) {
+            return Response.json({ error: "Teacher not found" }, { status: 404, headers: corsHeaders });
+          }
+
+          // Verify old password (plaintext comparison)
+          if (oldPassword !== teacher.password) {
+            return Response.json({ error: "Invalid old password" }, { status: 401, headers: corsHeaders });
+          }
+
+          // Update to new password
+          await env.DB.prepare("UPDATE Teacher SET password = ? WHERE id = ?").bind(newPassword, teacherId).run();
+
+          return Response.json({ success: true, message: "Password updated successfully" }, { headers: corsHeaders });
+        }
+
+        // 5. PUT /api/profile/username (Teacher Change Name)
+        if (path === "/api/profile/username" && method === "PUT") {
+          const body = await request.json() as any;
+          const { teacherId, name } = body;
+
+          if (!teacherId || !name) {
+            return Response.json({ error: "Missing teacherId or name" }, { status: 400, headers: corsHeaders });
+          }
+
+          const result = await env.DB.prepare("UPDATE Teacher SET name = ? WHERE id = ?")
+            .bind(name, teacherId)
+            .run();
+
+          if (result.meta.changes > 0) {
+            return Response.json({ success: true, message: "Name updated successfully" }, { headers: corsHeaders });
+          } else {
+            return Response.json({ error: "Teacher not found or name is the same" }, { status: 404, headers: corsHeaders });
+          }
+        }
+
         // --- EMAIL CODE AUTH ROUTES ---
 
         // 1. POST /api/auth/email-code/send - 发送验证码
@@ -595,9 +641,11 @@ export default {
           }
         }
 
-        // --- CLASSROOMS MODULE ---
+        // --- CLASSROOMS MODULE: Handles all classroom-related operations. ---
 
         // GET /api/classrooms
+        // Retrieves a list of all classrooms with their corresponding student count.
+        // This is the primary endpoint for the Android client to perform a full sync.
         if (path === "/api/classrooms" && method === "GET") {
           const { results } = await env.DB.prepare(`
             SELECT c.*, COUNT(s.id) AS studentCount 
@@ -609,6 +657,7 @@ export default {
         }
 
         // POST /api/classrooms
+        // Creates a new classroom or updates an existing one if an ID is provided.
         if (path === "/api/classrooms" && method === "POST") {
           const body = await request.json() as any;
           if (body.id) {
@@ -932,6 +981,8 @@ export default {
         }
 
         // GET /api/v1/classes/delta
+        // Performs an incremental sync of classrooms based on the client's last sync timestamp.
+        // Returns lists of added, updated, and deleted classroom IDs.
         if (path === "/api/v1/classes/delta" && method === "GET") {
           const lastSyncTimestamp = parseInt(url.searchParams.get("lastSyncTimestamp") || "0", 10);
           const now = Date.now();
