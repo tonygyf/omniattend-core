@@ -71,7 +71,7 @@
 
 | 浅色模式 (Light) | 深色模式 (Dark) |
 | :---: | :---: |
-| ![Light Mode](./photos/light.png) | ![Dark Mode](./photos.png) |
+| ![Light Mode](./photos/light.png) | ![Dark Mode](./photos/dark.png) |
 
 ---
 
