@@ -335,6 +335,44 @@ export default {
           }, { headers: corsHeaders });
         }
 
+        if (path === "/api/login/student" && method === "POST") {
+          const body = await request.json() as any;
+          const sid = (body.sid || "").toString().trim();
+          const password = (body.password || "").toString();
+
+          if (!sid || !password) {
+            return Response.json({ error: "Missing sid or password" }, { status: 400, headers: corsHeaders });
+          }
+
+          const student = await env.DB.prepare("SELECT * FROM Student WHERE sid = ?")
+            .bind(sid)
+            .first<any>();
+
+          if (!student) {
+            return Response.json({ error: "Invalid credentials" }, { status: 401, headers: corsHeaders });
+          }
+
+          if (password !== student.password) {
+            return Response.json({ error: "Invalid credentials" }, { status: 401, headers: corsHeaders });
+          }
+
+          const accessToken = crypto.randomUUID();
+          const refreshToken = crypto.randomUUID();
+
+          return Response.json({
+            success: true,
+            data: {
+              id: student.id,
+              sid: student.sid,
+              name: student.name,
+              classId: student.classId,
+              role: "student",
+              accessToken: accessToken,
+              refreshToken: refreshToken
+            }
+          }, { headers: corsHeaders });
+        }
+
         // 4. PUT /api/auth/change-password (Teacher Change Password)
         if (path === "/api/auth/change-password" && method === "PUT") {
           const body = await request.json() as any;

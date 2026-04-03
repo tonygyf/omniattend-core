@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Moon, Sun, Database, Server, Smartphone, Copy, Check } from 'lucide-react';
 
+const API_BASE_URL = 'https://omni.gyf123.dpdns.org';
+const API_KEY = 'my-secret-api-key';
+
 const SettingsPage: React.FC = () => {
   const [theme, setTheme] = useState<'light' | 'dark'>(
     () => document.documentElement.classList.contains('dark') ? 'dark' : 'light'
@@ -25,7 +28,9 @@ const SettingsPage: React.FC = () => {
     const checkHealth = async () => {
       setLoadingHealth(true);
       try {
-        const res = await fetch('/api/health');
+        const res = await fetch(`${API_BASE_URL}/api/health`, {
+          headers: { 'X-API-Key': API_KEY }
+        });
         if (res.ok) {
           const data = await res.json();
           setHealthData(data);
