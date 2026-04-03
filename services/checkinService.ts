@@ -1,6 +1,16 @@
 
 import { calculateHaversineDistance } from './validationService';
 
+function parseCheckinDateTime(rawValue: any): Date | null {
+    if (!rawValue) return null;
+    const raw = String(rawValue).trim();
+    if (!raw) return null;
+    const hasTimezone = /([zZ]|[+\-]\d{2}:\d{2})$/.test(raw);
+    const normalized = raw.replace(' ', 'T');
+    const parsed = hasTimezone ? new Date(normalized) : new Date(`${normalized}+08:00`);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed;
+}
 
 
 // 1. Create Check-in Task
@@ -11,7 +21,12 @@ export async function createCheckinTask(db: D1Database, taskData: any) {
         throw new Error("classId, teacherId, title, startAt, and endAt are required.");
     }
 
-    if (new Date(startAt) >= new Date(endAt)) {
+    const startDate = parseCheckinDateTime(startAt);
+    const endDate = parseCheckinDateTime(endAt);
+    if (!startDate || !endDate) {
+        throw new Error("Invalid date format for startAt/endAt.");
+    }
+    if (startDate.getTime() >= endDate.getTime()) {
         throw new Error("End time must be after start time.");
     }
 
@@ -99,7 +114,12 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
     }
 
     const now = new Date();
-    if (now < new Date(task.startAt) || now > new Date(task.endAt)) {
+    const taskStartAt = parseCheckinDateTime(task.startAt);
+    const taskEndAt = parseCheckinDateTime(task.endAt);
+    if (!taskStartAt || !taskEndAt) {
+        throw new Error("Check-in task time format is invalid.");
+    }
+    if (now.getTime() < taskStartAt.getTime() || now.getTime() > taskEndAt.getTime()) {
         throw new Error("Check-in is not within the allowed time frame.");
     }
 

@@ -409,6 +409,7 @@ const ActiveTaskDetails: React.FC<{ task: CheckinTask, onClose: () => void }> = 
   const [reviewQueue, setReviewQueue] = useState<CheckinSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [revealedPasswordBySubmission, setRevealedPasswordBySubmission] = useState<Record<number, boolean>>({});
+  const [showTaskPassword, setShowTaskPassword] = useState(false);
   const auth = useAuth();
 
   const loadDetails = async () => {
@@ -491,6 +492,36 @@ const ActiveTaskDetails: React.FC<{ task: CheckinTask, onClose: () => void }> = 
                             <StatCard icon={<ShieldQuestion size={20}/>} label="待审核" value={details?.summary?.pendingReview ?? 0} color="border-amber-200"/>
                             <StatCard icon={<UserX size={20}/>} label="未通过" value={details?.summary?.rejected ?? 0} color="border-red-200"/>
                             <StatCard icon={<AlertCircle size={20}/>} label="未提交" value={details?.summary?.notSubmitted ?? 0} color="border-slate-200"/>
+                        </div>
+                    </div>
+                    <div className="p-6 border-b space-y-3">
+                        <h3 className="font-semibold text-slate-700">签到方式</h3>
+                        <div className="text-xs text-slate-700 space-y-2">
+                            <div className="flex items-center justify-between">
+                                <span>地理位置</span>
+                                <span>{task.locationLat != null && task.locationLng != null ? `开启 (${task.locationRadiusM || 0}m)` : '关闭'}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span>手势答案</span>
+                                <span>{task.gestureSequence || '未设置'}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                                <span>签到密码</span>
+                                {task.passwordPlain ? (
+                                    <span className="inline-flex items-center gap-2">
+                                        <span>{showTaskPassword ? task.passwordPlain : maskValue(task.passwordPlain)}</span>
+                                        <button
+                                            onClick={() => setShowTaskPassword(!showTaskPassword)}
+                                            className="inline-flex items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 p-1"
+                                            title={showTaskPassword ? '隐藏密码' : '显示密码'}
+                                        >
+                                            {showTaskPassword ? <EyeOff size={12} /> : <Eye size={12} />}
+                                        </button>
+                                    </span>
+                                ) : (
+                                    <span>未设置</span>
+                                )}
+                            </div>
                         </div>
                     </div>
                     {/* Review Queue */}
