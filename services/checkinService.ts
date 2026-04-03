@@ -82,7 +82,7 @@ export async function getCheckinTasks(db: D1Database, params: { classId?: string
 
 // 2. Submit Check-in
 export async function submitCheckin(db: D1Database, taskId: number, submissionData: any) {
-    const { studentId, lat, lng, gestureInput, passwordInput } = submissionData;
+    const { studentId, lat, lng, gestureInput, passwordInput, reason } = submissionData;
 
     if (!studentId) {
         throw new Error("studentId is required.");
@@ -133,6 +133,10 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
     }
 
     const finalResult = autoResult === 'PASS' ? 'APPROVED' : 'PENDING_REVIEW';
+    const userReason = (reason || '').toString().trim();
+    if (userReason) {
+        reasons.push(`Student reason: ${userReason}`);
+    }
 
     const ps = db.prepare(`
         INSERT INTO CheckinSubmission (taskId, studentId, lat, lng, gestureInput, passwordInput, autoResult, finalResult, reason)

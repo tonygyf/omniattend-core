@@ -839,6 +839,53 @@ export default {
             }
         }
 
+        if (path === "/api/checkin/submissions/my" && method === "GET") {
+            try {
+                const studentId = Number(url.searchParams.get("studentId") || 0);
+                if (!studentId) {
+                    return Response.json({ error: "studentId is required" }, { status: 400, headers: corsHeaders });
+                }
+                const { results } = await env.DB.prepare(
+                    `SELECT s.id, s.taskId, t.title, t.classId, s.submittedAt, s.finalResult, s.reason
+                     FROM CheckinSubmission s
+                     INNER JOIN CheckinTask t ON s.taskId = t.id
+                     WHERE s.studentId = ?
+                     ORDER BY s.submittedAt DESC`
+                ).bind(studentId).all();
+                return Response.json({ success: true, data: results || [] }, { headers: corsHeaders });
+            } catch (e: any) {
+                return Response.json({ error: e.message }, { status: 500, headers: corsHeaders });
+            }
+        }
+
+        const appealMatch = path.match(/^\/api\/checkin\/submissions\/(\d+)\/appeal$/);
+        if (appealMatch && method === "POST") {
+            try {
+                const submissionId = parseInt(appealMatch[1], 10);
+                const body = await request.json() as any;
+                const studentId = Number(body.studentId || 0);
+                const reason = (body.reason || "").toString().trim();
+                if (!studentId || !reason) {
+                    return Response.json({ error: "studentId and reason are required" }, { status: 400, headers: corsHeaders });
+                }
+                const submission = await env.DB.prepare(
+                    "SELECT id, reason, finalResult FROM CheckinSubmission WHERE id = ? AND studentId = ?"
+                ).bind(submissionId, studentId).first<any>();
+                if (!submission) {
+                    return Response.json({ error: "Submission not found" }, { status: 404, headers: corsHeaders });
+                }
+                const mergedReason = (submission.reason ? `${submission.reason}; ` : "") + `Appeal: ${reason}`;
+                await env.DB.prepare(
+                    `UPDATE CheckinSubmission
+                     SET reason = ?, finalResult = 'PENDING_REVIEW', manualResult = NULL, reviewerId = NULL, reviewedAt = NULL
+                     WHERE id = ?`
+                ).bind(mergedReason, submissionId).run();
+                return Response.json({ success: true, message: "Appeal submitted" }, { headers: corsHeaders });
+            } catch (e: any) {
+                return Response.json({ error: e.message }, { status: 400, headers: corsHeaders });
+            }
+        }
+
         // POST /api/sync/upload
         // Uploads local attendance sessions and results
         // Payload: { teacherId: 1, sessions: [ { ..., results: [] } ] }
