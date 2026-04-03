@@ -22,7 +22,7 @@ import {
   CurrentUser,
   Classroom
 } from '../types';
-import { CheckCircle2, Clock, XCircle, AlertCircle, Plus, MapPin, Hand, Key, Users, Eye, X, Loader2, UserCheck, UserX, ShieldQuestion } from 'lucide-react';
+import { CheckCircle2, Clock, XCircle, AlertCircle, Plus, MapPin, Hand, Key, Users, Eye, EyeOff, X, Loader2, UserCheck, UserX, ShieldQuestion } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 // Main Page Component
@@ -408,7 +408,7 @@ const ActiveTaskDetails: React.FC<{ task: CheckinTask, onClose: () => void }> = 
   const [details, setDetails] = useState<CheckinTaskDetails | null>(null);
   const [reviewQueue, setReviewQueue] = useState<CheckinSubmission[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('status'); // 'status' or 'review'
+  const [revealedPasswordBySubmission, setRevealedPasswordBySubmission] = useState<Record<number, boolean>>({});
   const auth = useAuth();
 
   const loadDetails = async () => {
@@ -462,6 +462,11 @@ const ActiveTaskDetails: React.FC<{ task: CheckinTask, onClose: () => void }> = 
     }
   };
 
+  const maskValue = (value?: string) => {
+    if (!value) return '--';
+    return '•'.repeat(Math.max(6, value.length));
+  };
+
   return (
     <div className="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4 backdrop-blur-sm">
         <div className="bg-slate-50 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col">
@@ -495,10 +500,29 @@ const ActiveTaskDetails: React.FC<{ task: CheckinTask, onClose: () => void }> = 
                             <div className="space-y-3">
                                 {reviewQueue.map(sub => (
                                     <div key={sub.id} className="bg-amber-50 border border-amber-200 p-3 rounded-lg">
-                                        <div className="flex justify-between items-center">
-                                            <div>
+                                        <div className="flex justify-between items-start gap-3">
+                                            <div className="min-w-0 flex-1">
                                                 <p className="font-medium text-sm">{sub.studentName} <span className="text-xs text-slate-500">({sub.studentSid})</span></p>
                                                 <p className="text-xs text-amber-700 mt-1">原因: {sub.reason}</p>
+                                                {(sub.gestureInput || sub.passwordInput) && (
+                                                    <div className="mt-2 space-y-1">
+                                                        {sub.gestureInput && (
+                                                            <div className="text-xs text-slate-700">手势答案：{sub.gestureInput}</div>
+                                                        )}
+                                                        {sub.passwordInput && (
+                                                            <div className="text-xs text-slate-700 flex items-center gap-2">
+                                                                <span>密码答案：{revealedPasswordBySubmission[sub.id] ? sub.passwordInput : maskValue(sub.passwordInput)}</span>
+                                                                <button
+                                                                    onClick={() => setRevealedPasswordBySubmission(prev => ({ ...prev, [sub.id]: !prev[sub.id] }))}
+                                                                    className="inline-flex items-center justify-center rounded border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 p-1"
+                                                                    title={revealedPasswordBySubmission[sub.id] ? '隐藏密码' : '显示密码'}
+                                                                >
+                                                                    {revealedPasswordBySubmission[sub.id] ? <EyeOff size={12} /> : <Eye size={12} />}
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                             <div className="flex gap-2">
                                                 <button onClick={() => handleReview(sub.id, 'reject')} className="px-2 py-1 text-xs font-medium bg-white border rounded hover:bg-red-50">驳回</button>
