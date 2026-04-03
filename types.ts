@@ -170,6 +170,7 @@ export interface CheckinSubmissionRequest {
   gestureInput?: string;
   lat?: number;
   lng?: number;
+  reason?: string;
 }
 
 export interface ReviewSubmissionRequest {

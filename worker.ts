@@ -771,7 +771,7 @@ export default {
             try {
                 const body = await request.json();
                 const result = await createCheckinTask(env.DB, body);
-                return Response.json({ success: true, data: { id: result.meta.last_row_id } }, { status: 201, headers: corsHeaders });
+                return Response.json({ ok: true, success: true, id: result.meta.last_row_id, data: { id: result.meta.last_row_id } }, { status: 201, headers: corsHeaders });
             } catch (e: any) {
                 return Response.json({ error: e.message }, { status: e instanceof Error && e.message.includes("required") ? 400 : 500, headers: corsHeaders });
             }
