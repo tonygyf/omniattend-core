@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '../components/Modal';
 import { fetchClassrooms, fetchAllStudents, createClassroom } from '../services/dataService';
 import { Classroom, User } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 interface ClassroomPageProps {
   onNavigateToClass: (id: number, name: string) => void;
@@ -12,6 +13,7 @@ interface ClassroomPageProps {
 import { getFullImageUrl } from '../services/cdn';
 
 const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
+  const auth = useAuth();
   const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [students, setStudents] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,11 +65,15 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
       alert('班级名称不能为空。');
       return;
     }
+    if (!auth.user?.id || Number.isNaN(Number(auth.user.id))) {
+      alert('当前账号无有效教师 ID，无法创建班级。');
+      return;
+    }
     setIsSubmitting(true);
     const result = await createClassroom({
       name: newClassName,
       year: newClassYear,
-      teacherId: 1, // Assuming teacherId is 1 for now
+      teacherId: Number(auth.user.id),
     });
 
     if (result.success) {

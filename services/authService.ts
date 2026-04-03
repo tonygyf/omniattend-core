@@ -21,7 +21,7 @@ export const loginAdmin = async (email: string, password: string): Promise<ApiRe
     return {
       success: true,
       data: {
-        id: 'mock-admin-id',
+        id: '-1',
         username: 'demo_admin',
         name: 'Demo Admin',
         email: 'demo@facecheck.com',

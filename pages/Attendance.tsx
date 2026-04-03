@@ -6,7 +6,8 @@ import {
   closeCheckinTask,
   fetchCheckinTaskDetails,
   fetchReviewQueue,
-  reviewSubmission
+  reviewSubmission,
+  fetchClassrooms
 } from '../services/dataService';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -18,7 +19,8 @@ import {
   CheckinTaskDetails,
   CheckinSubmission,
   CurrentUserStatus,
-  CurrentUser
+  CurrentUser,
+  Classroom
 } from '../types';
 import { CheckCircle2, Clock, XCircle, AlertCircle, Plus, MapPin, Hand, Key, Users, Eye, X, Loader2, UserCheck, UserX, ShieldQuestion } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -196,9 +198,10 @@ import GesturePad from '../components/GesturePad';
 const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }> = ({ onClose, onCreated }) => {
   const auth = useAuth();
   const [loading, setLoading] = useState(false);
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
+  const [classroomsLoading, setClassroomsLoading] = useState(true);
   const [task, setTask] = useState<Partial<CreateCheckinTaskRequest>>({
     title: '',
-    classId: 1,
     status: CheckinTaskStatus.ACTIVE,
   });
   const [constraints, setConstraints] = useState({ location: false, gesture: false, password: false });
@@ -206,6 +209,20 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
 
   const [selectedAddress, setSelectedAddress] = useState('尚未选择位置');
+
+  useEffect(() => {
+    const loadClassrooms = async () => {
+      setClassroomsLoading(true);
+      const classroomList = await fetchClassrooms();
+      setClassrooms(classroomList);
+      setTask(prev => {
+        if (prev.classId || !classroomList.length) return prev;
+        return { ...prev, classId: classroomList[0].id };
+      });
+      setClassroomsLoading(false);
+    };
+    loadClassrooms();
+  }, []);
 
   const handleFetchLocation = () => {
       if (!navigator.geolocation) {
@@ -243,12 +260,16 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
   };
 
   const handleSubmit = async () => {
+    if (!task.classId) {
+      toast.error('请选择目标班级');
+      return;
+    }
     setLoading(true);
     const finalTask: CreateCheckinTaskRequest = {
         ...task,
         teacherId: auth.user!.id,
         title: task.title || '未命名签到',
-        classId: task.classId || 1,
+        classId: task.classId,
         startAt: time.start.toISOString(),
         endAt: time.end.toISOString(),
         status: CheckinTaskStatus.ACTIVE,
@@ -283,9 +304,12 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">目标班级</label>
-              <select value={task.classId} onChange={(e) => setTask({...task, classId: parseInt(e.target.value)})} className="w-full input bg-white">
-                <option value={1}>软件工程2021级</option>
-                <option value={2}>计算机科学2022级</option>
+              <select value={task.classId ?? ''} onChange={(e) => setTask({...task, classId: Number(e.target.value)})} className="w-full input bg-white" disabled={classroomsLoading || classrooms.length === 0}>
+                {classroomsLoading && <option value="">加载班级中...</option>}
+                {!classroomsLoading && classrooms.length === 0 && <option value="">暂无可用班级</option>}
+                {!classroomsLoading && classrooms.map((classroom) => (
+                  <option key={classroom.id} value={classroom.id}>{classroom.name}</option>
+                ))}
               </select>
             </div>
           </div>
@@ -369,7 +393,7 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
         </div>
         <div className="px-6 py-4 bg-slate-50 rounded-b-2xl flex justify-end gap-3 border-t">
           <button onClick={onClose} className="px-5 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">取消</button>
-          <button onClick={handleSubmit} disabled={!task.title || loading} className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 flex items-center gap-2">
+          <button onClick={handleSubmit} disabled={!task.title || !task.classId || loading} className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 flex items-center gap-2">
             {loading && <Loader2 size={16} className="animate-spin"/>}
             {loading ? '发布中...' : '立即发布'}
           </button>

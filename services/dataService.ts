@@ -18,6 +18,17 @@ const API_BASE_URL = 'https://omni.gyf123.dpdns.org';
 const API_KEY = 'my-secret-api-key';
 
 const delay = (ms = 600) => new Promise(resolve => setTimeout(resolve, ms));
+const isDemoAccount = () => {
+  if (typeof window === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem('facecheck_admin_user');
+    if (!raw) return false;
+    const user = JSON.parse(raw);
+    return Number(user?.id) === -1 || user?.token === 'mock-demo-jwt-token';
+  } catch {
+    return false;
+  }
+};
 
 const safeFetchJSON = async <T>(url: string): Promise<T> => {
   const res = await fetch(url, {
@@ -53,7 +64,7 @@ const generateMockAttendance = (): AttendanceRecord[] => [
 ];
 
 export const fetchClassrooms = async (): Promise<Classroom[]> => {
-  if (USE_MOCK) {
+  if (USE_MOCK || isDemoAccount()) {
     await delay();
     return generateMockClassrooms();
   }
@@ -61,12 +72,21 @@ export const fetchClassrooms = async (): Promise<Classroom[]> => {
     const { data } = await safeFetchJSON<any>(`${API_BASE_URL}/api/classrooms`);
     return data || [];
   } catch (e) {
-    console.warn('Classrooms API failed, using mock data', e);
-    return generateMockClassrooms();
+    console.warn('Classrooms API failed', e);
+    return [];
   }
 };
 
 export const fetchStudentsByClass = async (classId: number): Promise<User[]> => {
+  if (isDemoAccount()) {
+    await delay();
+    return generateMockUsers().filter(u => {
+      if (classId === 1) return u.department === '软件工程 2023级 1班';
+      if (classId === 2) return u.department === '计算机科学 2023级 3班';
+      if (classId === 3) return u.department === '人工智能 2022级 实验班';
+      return false;
+    });
+  }
   try {
     const { data } = await safeFetchJSON<any>(`${API_BASE_URL}/api/students?classId=${classId}`);
     return (data || []).map((s: any) => ({
@@ -86,6 +106,9 @@ export const fetchStudentsByClass = async (classId: number): Promise<User[]> => 
 };
 
 export const createClassroom = async (classroom: Omit<Classroom, 'id' | 'studentCount'>): Promise<{ success: boolean; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号仅可查看 mock 数据' };
+  }
   try {
     const res = await fetch(`${API_BASE_URL}/api/classrooms`, {
       method: 'POST',
@@ -104,6 +127,9 @@ export const createClassroom = async (classroom: Omit<Classroom, 'id' | 'student
 };
 
 export const createStudentsBatch = async (classId: number, students: any[]): Promise<{ success: boolean; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号仅可查看 mock 数据' };
+  }
   try {
     const res = await fetch(`${API_BASE_URL}/api/students/batch`, {
       method: 'POST',
@@ -122,6 +148,9 @@ export const createStudentsBatch = async (classId: number, students: any[]): Pro
 };
 
 export const createStudent = async (student: Partial<User> & { classId: number }): Promise<{ success: boolean; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号仅可查看 mock 数据' };
+  }
   try {
     const res = await fetch(`${API_BASE_URL}/api/students`, {
       method: 'POST',
@@ -140,7 +169,7 @@ export const createStudent = async (student: Partial<User> & { classId: number }
 };
 
 export const fetchAllStudents = async (): Promise<User[]> => {
-  if (USE_MOCK) {
+  if (USE_MOCK || isDemoAccount()) {
     await delay();
     return generateMockUsers();
   }
@@ -168,12 +197,13 @@ export const fetchAllStudents = async (): Promise<User[]> => {
     throw new Error('No students found across all classes');
   } catch (e) {
     console.warn('fetchAllStudents failed, falling back to mock data', e);
-    return generateMockUsers();
+    // return generateMockUsers();
+    return [];
   }
 };
 
 export const fetchDashboardStats = async (): Promise<DashboardStats> => {
-  if (USE_MOCK) {
+  if (USE_MOCK || isDemoAccount()) {
     await delay(800);
     return { totalUsers: 45, presentToday: 38, lateToday: 4, absentToday: 3, weeklyTrend: [], lateYesterday: 0, newStudentsThisWeek: 0 };
   }
@@ -187,7 +217,7 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
 };
 
 export const fetchUsers = async (teacherId?: string | number): Promise<User[]> => {
-  if (USE_MOCK) {
+  if (USE_MOCK || isDemoAccount()) {
     await delay();
     return generateMockUsers();
   }
@@ -197,13 +227,14 @@ export const fetchUsers = async (teacherId?: string | number): Promise<User[]> =
     return allStudents;
   } catch (e) {
     console.warn('Users API failed, using mock data', e);
-    await delay();
-    return generateMockUsers();
+    // await delay();
+    // return generateMockUsers();
+    return [];
   }
 };
 
 export const fetchRecentAttendance = async (): Promise<AttendanceRecord[]> => {
-  if (USE_MOCK) {
+  if (USE_MOCK || isDemoAccount()) {
     await delay();
     return generateMockAttendance();
   }
@@ -221,8 +252,9 @@ export const fetchRecentAttendance = async (): Promise<AttendanceRecord[]> => {
     }));
   } catch (e) {
     console.warn('Attendance API failed, using mock data', e);
-    await delay();
-    return generateMockAttendance();
+    // await delay();
+    // return generateMockAttendance();
+    return [];
   }
 };
 
@@ -231,6 +263,10 @@ export const syncDataWithCloudflare = async (): Promise<void> => {
 };
 
 export const fetchCheckinTasks = async (classId?: number, status?: string): Promise<CheckinTask[]> => {
+  if (isDemoAccount()) {
+    await delay();
+    return [];
+  }
   try {
     let url = `${API_BASE_URL}/api/checkin/tasks`;
     const params = new URLSearchParams();
@@ -246,6 +282,9 @@ export const fetchCheckinTasks = async (classId?: number, status?: string): Prom
 };
 
 export const createCheckinTask = async (task: CreateCheckinTaskRequest): Promise<{ success: boolean; id?: number; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号仅可查看 mock 数据' };
+  }
   try {
     const res = await fetch(`${API_BASE_URL}/api/checkin/tasks`, {
       method: 'POST',
@@ -262,6 +301,10 @@ export const createCheckinTask = async (task: CreateCheckinTaskRequest): Promise
 };
 
 export const fetchAttendanceAnalysis = async (teacherId: number): Promise<StudentAttendanceAnalysis[]> => {
+  if (isDemoAccount()) {
+    await delay();
+    return [];
+  }
   try {
     const url = `${API_BASE_URL}/api/insights/attendance-summary?teacherId=${teacherId}`;
     const { data } = await safeFetchJSON<any>(url);
@@ -273,6 +316,9 @@ export const fetchAttendanceAnalysis = async (teacherId: number): Promise<Studen
 };
 
 export const closeCheckinTask = async (taskId: number): Promise<{ success: boolean; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号仅可查看 mock 数据' };
+  }
   try {
     const res = await fetch(`${API_BASE_URL}/api/checkin/tasks/${taskId}/close`, {
       method: 'POST',
@@ -288,6 +334,9 @@ export const closeCheckinTask = async (taskId: number): Promise<{ success: boole
 };
 
 export const submitCheckin = async (submission: CheckinSubmissionRequest): Promise<{ success: boolean; data?: any; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号仅可查看 mock 数据' };
+  }
   try {
     const res = await fetch(`${API_BASE_URL}/api/checkin/tasks/${submission.taskId}/submit`, {
       method: 'POST',
@@ -304,6 +353,10 @@ export const submitCheckin = async (submission: CheckinSubmissionRequest): Promi
 };
 
 export const fetchCheckinTaskDetails = async (taskId: number): Promise<any> => {
+  if (isDemoAccount()) {
+    await delay();
+    return { summary: {}, users: [] };
+  }
   try {
     const url = `${API_BASE_URL}/api/checkin/tasks/${taskId}/current-users`;
     const { data } = await safeFetchJSON<any>(url);
@@ -315,6 +368,10 @@ export const fetchCheckinTaskDetails = async (taskId: number): Promise<any> => {
 };
 
 export const fetchReviewQueue = async (taskId: number): Promise<CheckinSubmission[]> => {
+  if (isDemoAccount()) {
+    await delay();
+    return [];
+  }
   try {
     const url = `${API_BASE_URL}/api/checkin/tasks/${taskId}/review-queue`;
     const { data } = await safeFetchJSON<any>(url);
@@ -326,6 +383,9 @@ export const fetchReviewQueue = async (taskId: number): Promise<CheckinSubmissio
 };
 
 export const reviewSubmission = async (submissionId: number, review: ReviewSubmissionRequest): Promise<{ success: boolean; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号仅可查看 mock 数据' };
+  }
   try {
     const res = await fetch(`${API_BASE_URL}/api/checkin/submissions/${submissionId}/review`, {
       method: 'POST',
