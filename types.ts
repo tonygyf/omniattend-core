@@ -171,6 +171,39 @@ export interface CheckinSubmissionRequest {
   lat?: number;
   lng?: number;
   reason?: string;
+  // Optional cloud-face path; persisted by backend when migration columns are present.
+  photoKey?: string;
+  photoUri?: string;
+  faceVerifyScore?: number;
+  faceVerifyPassed?: boolean;
+}
+
+export interface CheckinPhotoUploadRequest {
+  taskId: number;
+  studentId: number;
+  key?: string;
+  contentType?: string;
+  dataBase64?: string;
+}
+
+export interface FaceEnrollRequest {
+  studentId: number;
+  modelVer: string;
+  vector: string | Array<number>;
+  quality?: number;
+}
+
+export interface FaceVerifyRequest {
+  taskId: number;
+  studentId: number;
+  photoKey: string;
+  threshold?: number;
+}
+
+export interface FaceVerifyResponse {
+  passed: boolean;
+  score: number;
+  reason?: string;
 }
 
 export interface ReviewSubmissionRequest {

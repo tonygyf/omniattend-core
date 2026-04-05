@@ -97,7 +97,18 @@ export async function getCheckinTasks(db: D1Database, params: { classId?: string
 
 // 2. Submit Check-in
 export async function submitCheckin(db: D1Database, taskId: number, submissionData: any) {
-    const { studentId, lat, lng, gestureInput, passwordInput, reason } = submissionData;
+    const {
+        studentId,
+        lat,
+        lng,
+        gestureInput,
+        passwordInput,
+        reason,
+        photoKey,
+        photoUri,
+        faceVerifyScore,
+        faceVerifyPassed
+    } = submissionData;
 
     if (!studentId) {
         throw new Error("studentId is required.");
@@ -152,6 +163,21 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
         reasons.push('Incorrect password.');
     }
 
+    // Optional cloud face verification result (no DB schema change).
+    if (typeof faceVerifyPassed === 'boolean' && !faceVerifyPassed) {
+        autoResult = 'FAIL';
+        reasons.push('Face verification failed.');
+    }
+    const normalizedFaceScore = (typeof faceVerifyScore === 'number' && Number.isFinite(faceVerifyScore))
+        ? faceVerifyScore
+        : null;
+    const normalizedFacePassed = (typeof faceVerifyPassed === 'boolean')
+        ? (faceVerifyPassed ? 1 : 0)
+        : null;
+    if (normalizedFaceScore != null) {
+        reasons.push(`Face score: ${normalizedFaceScore.toFixed(4)}`);
+    }
+
     const finalResult = autoResult === 'PASS' ? 'APPROVED' : 'PENDING_REVIEW';
     const userReason = (reason || '').toString().trim();
     if (userReason) {
@@ -159,8 +185,11 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
     }
 
     const ps = db.prepare(`
-        INSERT INTO CheckinSubmission (taskId, studentId, lat, lng, gestureInput, passwordInput, autoResult, finalResult, reason)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO CheckinSubmission (
+            taskId, studentId, lat, lng, gestureInput, passwordInput, autoResult, finalResult, reason,
+            photoKey, photoUri, faceVerifyScore, faceVerifyPassed
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
         taskId,
         studentId,
@@ -170,7 +199,11 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
         passwordInput ?? null,
         autoResult,
         finalResult,
-        reasons.join('; ')
+        reasons.join('; '),
+        (photoKey || '').toString().trim() || null,
+        (photoUri || '').toString().trim() || null,
+        normalizedFaceScore,
+        normalizedFacePassed
     );
 
     return await ps.run();

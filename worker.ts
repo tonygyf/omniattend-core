@@ -2,6 +2,7 @@
  * Cloudflare Worker for FaceCheck Admin
  */
 import { createCheckinTask, getCheckinTasks, getCheckinTaskDetails, getReviewQueue, reviewSubmission, submitCheckin, closeCheckinTask } from './services/checkinService';
+import { createFaceEmbedding, getFaceEmbeddingsByStudent } from './services/face/faceEmbeddingService';
 
 export interface Env {
   DB: D1Database;
@@ -44,6 +45,15 @@ async function sendVerificationEmail(email: string, code: string): Promise<boole
     console.error('Failed to send email:', error);
     return false;
   }
+}
+
+function normalizeRecordKey(rawKey: string, studentId?: number, taskId?: number): string {
+  const cleaned = (rawKey || "").replace(/^\/+/, "").trim();
+  if (cleaned.startsWith("records/")) return cleaned;
+  if (cleaned.length > 0) return `records/${cleaned}`;
+  const sid = studentId && Number.isFinite(studentId) ? String(studentId) : "unknown";
+  const tid = taskId && Number.isFinite(taskId) ? String(taskId) : "unknown";
+  return `records/${tid}/${sid}/${Date.now()}_${crypto.randomUUID()}.jpg`;
 }
 
 export default {
@@ -599,6 +609,45 @@ export default {
           }
         }
 
+        // POST /api/checkin/photos/upload
+        // Android check-in photo upload entry: always normalize object key under records/.
+        if (path === "/api/checkin/photos/upload" && method === "POST") {
+          try {
+            const contentType = request.headers.get("content-type") || "";
+            if (contentType.includes("application/json")) {
+              const body = await request.json() as any;
+              const studentId = Number(body.studentId || 0);
+              const taskId = Number(body.taskId || 0);
+              const key = normalizeRecordKey((body.key || "").toString(), studentId, taskId);
+              const ct = (body.contentType || "image/jpeg").toString();
+              const dataBase64 = (body.dataBase64 || "").toString();
+              if (!dataBase64) {
+                return Response.json({ error: "dataBase64 required" }, { status: 400, headers: corsHeaders });
+              }
+              const bin = Uint8Array.from(atob(dataBase64), c => c.charCodeAt(0));
+              await env.R2.put(key, bin, { httpMetadata: { contentType: ct } });
+              return Response.json({ ok: true, key }, { headers: corsHeaders });
+            }
+            if (contentType.includes("multipart/form-data")) {
+              const form = await request.formData();
+              const file = form.get("file") as File | null;
+              const rawKey = (form.get("key") as string || "").trim();
+              const studentId = Number((form.get("studentId") as string) || 0);
+              const taskId = Number((form.get("taskId") as string) || 0);
+              if (!file) {
+                return Response.json({ error: "file required" }, { status: 400, headers: corsHeaders });
+              }
+              const key = normalizeRecordKey(rawKey, studentId, taskId);
+              const arr = await file.arrayBuffer();
+              await env.R2.put(key, new Uint8Array(arr), { httpMetadata: { contentType: file.type || "image/jpeg" } });
+              return Response.json({ ok: true, key }, { headers: corsHeaders });
+            }
+            return Response.json({ error: "Unsupported Content-Type" }, { status: 415, headers: corsHeaders });
+          } catch (_e: any) {
+            return Response.json({ error: "Checkin photo upload failed" }, { status: 500, headers: corsHeaders });
+          }
+        }
+
         // --- DATA ROUTES ---
 
         // --- STUDENTS MODULE ---
@@ -731,25 +780,63 @@ export default {
 
         // GET /api/face/embeddings
         if (path === "/api/face/embeddings" && method === "GET") {
-           const studentId = url.searchParams.get("studentId");
-           if (!studentId) return Response.json({ error: "studentId required" }, { status: 400, headers: corsHeaders });
-           
-           const { results } = await env.DB.prepare("SELECT * FROM FaceEmbedding WHERE studentId = ?").bind(studentId).all();
-           return Response.json({ data: results }, { headers: corsHeaders });
+           try {
+             const studentId = Number(url.searchParams.get("studentId") || 0);
+             const data = await getFaceEmbeddingsByStudent(env.DB, studentId);
+             return Response.json({ data }, { headers: corsHeaders });
+           } catch (e: any) {
+             return Response.json({ error: e.message }, { status: 400, headers: corsHeaders });
+           }
         }
 
         // POST /api/face/embeddings
         if (path === "/api/face/embeddings" && method === "POST") {
-           const body = await request.json() as any;
-           // Expect vector as base64 or array, convert if needed. D1 supports blob from array buffer.
-           // For simplicity, assuming client sends hex or we store as blob.
-           // In JS Worker, best to store as ArrayBuffer.
-           const vector = body.vector; // Assume base64 or array
-           
-           const res = await env.DB.prepare("INSERT INTO FaceEmbedding (studentId, modelVer, vector, quality) VALUES (?, ?, ?, ?)")
-             .bind(body.studentId, body.modelVer, vector, body.quality).run();
-             
-           return Response.json({ ok: true, id: res.meta.last_row_id }, { status: 201, headers: corsHeaders });
+           try {
+             const body = await request.json() as any;
+             const id = await createFaceEmbedding(env.DB, body);
+             return Response.json({ ok: true, id }, { status: 201, headers: corsHeaders });
+           } catch (e: any) {
+             return Response.json({ error: e.message }, { status: 400, headers: corsHeaders });
+           }
+        }
+
+        // PUT /api/student/profile/username
+        if (path === "/api/student/profile/username" && method === "PUT") {
+          const body = await request.json() as any;
+          const studentId = Number(body.studentId || 0);
+          const name = (body.name || "").toString().trim();
+          if (!studentId || !name) {
+            return Response.json({ error: "Missing studentId or name" }, { status: 400, headers: corsHeaders });
+          }
+          const result = await env.DB.prepare("UPDATE Student SET name = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?")
+            .bind(name, studentId)
+            .run();
+          if ((result.meta.changes || 0) <= 0) {
+            return Response.json({ error: "Student not found" }, { status: 404, headers: corsHeaders });
+          }
+          return Response.json({ success: true, message: "Student name updated successfully" }, { headers: corsHeaders });
+        }
+
+        // PUT /api/student/profile/password
+        if (path === "/api/student/profile/password" && method === "PUT") {
+          const body = await request.json() as any;
+          const studentId = Number(body.studentId || 0);
+          const oldPassword = (body.oldPassword || "").toString();
+          const newPassword = (body.newPassword || "").toString();
+          if (!studentId || !oldPassword || !newPassword) {
+            return Response.json({ error: "Missing studentId, oldPassword, or newPassword" }, { status: 400, headers: corsHeaders });
+          }
+          const student = await env.DB.prepare("SELECT password FROM Student WHERE id = ?").bind(studentId).first<any>();
+          if (!student) {
+            return Response.json({ error: "Student not found" }, { status: 404, headers: corsHeaders });
+          }
+          if (student.password !== oldPassword) {
+            return Response.json({ error: "Invalid old password" }, { status: 401, headers: corsHeaders });
+          }
+          await env.DB.prepare("UPDATE Student SET password = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?")
+            .bind(newPassword, studentId)
+            .run();
+          return Response.json({ success: true, message: "Student password updated successfully" }, { headers: corsHeaders });
         }
 
         // ===== CHECKIN TASK SYSTEM =====
