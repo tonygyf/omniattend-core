@@ -40,11 +40,11 @@ export async function createCheckinTask(db: D1Database, taskData: any) {
         startAt,
         endAt,
         status || 'ACTIVE',
-        locationLat || null,
-        locationLng || null,
-        locationRadiusM || null,
-        gestureSequence || null,
-        passwordPlain || null
+        locationLat ?? null,
+        locationLng ?? null,
+        locationRadiusM ?? null,
+        gestureSequence ?? null,
+        passwordPlain ?? null
     );
 
     return await ps.run();
@@ -164,10 +164,10 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
     `).bind(
         taskId,
         studentId,
-        lat || null,
-        lng || null,
-        gestureInput || null,
-        passwordInput || null,
+        lat ?? null,
+        lng ?? null,
+        gestureInput ?? null,
+        passwordInput ?? null,
         autoResult,
         finalResult,
         reasons.join('; ')
