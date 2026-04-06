@@ -14,6 +14,7 @@ const MapPicker: React.FC<MapPickerProps> = ({ onLocationChange, initialLocation
   const map = useRef<any>(null);
   const marker = useRef<any>(null);
   const geocoder = useRef<any>(null);
+  const lastExternalLocationKey = useRef<string>('');
   const [searchAddress, setSearchAddress] = useState('');
   const [selectedAddress, setSelectedAddress] = useState('在地图上点击或拖动标记以选择位置');
 
@@ -21,43 +22,52 @@ const MapPicker: React.FC<MapPickerProps> = ({ onLocationChange, initialLocation
     `已选坐标：${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`;
 
   useEffect(() => {
-    if (mapContainer.current) {
-      map.current = new AMap.Map(mapContainer.current, {
-        zoom: 16,
-        center: initialLocation ? [initialLocation.lng, initialLocation.lat] : undefined,
-        viewMode: '3D', // 开启 3D 视图
-        layers: [
-            new AMap.TileLayer.Satellite(),
-            new AMap.TileLayer.RoadNet(),
-            new AMap.TileLayer.Traffic(),
-        ],
-      });
-
-      AMap.plugin(['AMap.Geocoder', 'AMap.Marker'], () => {
-        geocoder.current = new AMap.Geocoder();
-        if (initialLocation) {
-          addMarker(initialLocation);
-          reverseGeocode(initialLocation);
-        }
-      });
-
-      map.current.on('click', (e: any) => {
-        const { lng, lat } = e.lnglat;
-        const location = { lng, lat };
-        updateMarkerPosition(location);
-        reverseGeocode(location);
-      });
-
-    } else {
+    if (!mapContainer.current) {
       toast.error("地图容器加载失败");
+      return;
     }
+    const center = initialLocation ? [initialLocation.lng, initialLocation.lat] : [116.397428, 39.90923];
+    map.current = new AMap.Map(mapContainer.current, {
+      zoom: 16,
+      center,
+      viewMode: '3D',
+      layers: [
+        new AMap.TileLayer.Satellite(),
+        new AMap.TileLayer.RoadNet(),
+        new AMap.TileLayer.Traffic(),
+      ],
+    });
+
+    AMap.plugin(['AMap.Geocoder', 'AMap.Marker'], () => {
+      geocoder.current = new AMap.Geocoder();
+      if (initialLocation) {
+        updateMarkerPosition(initialLocation);
+        reverseGeocode(initialLocation);
+      }
+    });
+
+    map.current.on('click', (e: any) => {
+      const { lng, lat } = e.lnglat;
+      const location = { lng, lat };
+      updateMarkerPosition(location);
+      reverseGeocode(location);
+    });
 
     return () => {
       if (map.current) {
         map.current.destroy();
       }
     };
-  }, [initialLocation]);
+  }, []);
+
+  useEffect(() => {
+    if (!map.current || !initialLocation) return;
+    const locationKey = `${initialLocation.lat.toFixed(6)},${initialLocation.lng.toFixed(6)}`;
+    if (lastExternalLocationKey.current === locationKey) return;
+    lastExternalLocationKey.current = locationKey;
+    updateMarkerPosition(initialLocation);
+    reverseGeocode(initialLocation);
+  }, [initialLocation?.lat, initialLocation?.lng]);
 
   const reverseGeocode = (location: { lat: number; lng: number }) => {
     if (!geocoder.current) {
