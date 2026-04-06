@@ -169,9 +169,10 @@ const TaskItem: React.FC<{ task: CheckinTask; onSelect: () => void; onClose: () 
           </div>
           <div className="text-sm text-slate-600 flex items-center gap-4 flex-wrap">
               <div className="flex items-center gap-2"><Clock size={14} /><span>{new Date(task.startAt).toLocaleString('zh-CN')} - {new Date(task.endAt).toLocaleString('zh-CN')}</span></div>
-              {task.locationLat && <div className="flex items-center gap-1.5"><MapPin size={14} /><span>位置</span></div>}
+              {task.locationLat != null && task.locationLng != null && <div className="flex items-center gap-1.5"><MapPin size={14} /><span>位置</span></div>}
               {task.gestureSequence && <div className="flex items-center gap-1.5"><Hand size={14} /><span>手势</span></div>}
               {task.passwordPlain && <div className="flex items-center gap-1.5"><Key size={14} /><span>口令</span></div>}
+              {task.faceRequired ? <div className="flex items-center gap-1.5"><ShieldQuestion size={14} /><span>人脸</span></div> : null}
           </div>
         </div>
         <div className="flex gap-2">
@@ -204,7 +205,7 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
     title: '',
     status: CheckinTaskStatus.ACTIVE,
   });
-  const [constraints, setConstraints] = useState({ location: false, gesture: false, password: false });
+  const [constraints, setConstraints] = useState({ location: false, gesture: false, password: false, face: false });
   const [time, setTime] = useState({ start: new Date(), end: new Date(Date.now() + 30 * 60 * 1000) });
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
 
@@ -278,6 +279,8 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
         locationRadiusM: constraints.location ? (task.locationRadiusM || null) : null,
         gestureSequence: constraints.gesture ? (task.gestureSequence || null) : null,
         passwordPlain: constraints.password ? (task.passwordPlain || null) : null,
+        faceRequired: constraints.face,
+        faceMinScore: constraints.face ? (task.faceMinScore ?? 0.75) : null,
       };
 
     const result = await createCheckinTask(finalTask);
@@ -386,6 +389,27 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
               {constraints.password && (
                 <div className="mt-4 pl-8">
                   <input type="text" value={task.passwordPlain || ''} onChange={e => setTask({...task, passwordPlain: e.target.value})} placeholder="输入签到口令, e.g., 芝麻开门" className="input w-full md:w-1/2" autoComplete="off"/>
+                </div>
+              )}
+            </div>
+            <div className="p-4 rounded-lg border bg-slate-50/50">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" checked={constraints.face} onChange={(e) => setConstraints({...constraints, face: e.target.checked})} className="h-4 w-4 rounded"/>
+                <ShieldQuestion />
+                <span className="font-medium">人脸识别签到</span>
+              </label>
+              {constraints.face && (
+                <div className="mt-4 pl-8">
+                  <input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={task.faceMinScore ?? 0.75}
+                    onChange={e => setTask({...task, faceMinScore: Number(e.target.value)})}
+                    placeholder="人脸通过阈值（0~1）"
+                    className="input w-full md:w-1/2"
+                  />
                 </div>
               )}
             </div>
@@ -500,6 +524,10 @@ const ActiveTaskDetails: React.FC<{ task: CheckinTask, onClose: () => void }> = 
                             <div className="flex items-center justify-between">
                                 <span>地理位置</span>
                                 <span>{task.locationLat != null && task.locationLng != null ? `开启 (${task.locationRadiusM || 0}m)` : '关闭'}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span>人脸识别</span>
+                                <span>{task.faceRequired ? `开启 (阈值 ${task.faceMinScore ?? 0.75})` : '关闭'}</span>
                             </div>
                             <div className="flex items-center justify-between">
                                 <span>手势答案</span>

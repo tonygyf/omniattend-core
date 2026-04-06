@@ -17,6 +17,9 @@ const MapPicker: React.FC<MapPickerProps> = ({ onLocationChange, initialLocation
   const [searchAddress, setSearchAddress] = useState('');
   const [selectedAddress, setSelectedAddress] = useState('在地图上点击或拖动标记以选择位置');
 
+  const formatCoordinateAddress = (location: { lat: number; lng: number }) =>
+    `已选坐标：${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`;
+
   useEffect(() => {
     if (mapContainer.current) {
       map.current = new AMap.Map(mapContainer.current, {
@@ -57,14 +60,21 @@ const MapPicker: React.FC<MapPickerProps> = ({ onLocationChange, initialLocation
   }, [initialLocation]);
 
   const reverseGeocode = (location: { lat: number; lng: number }) => {
-    if (!geocoder.current) return;
+    if (!geocoder.current) {
+      const fallbackAddress = formatCoordinateAddress(location);
+      setSelectedAddress(fallbackAddress);
+      onLocationChange({ ...location, address: fallbackAddress });
+      return;
+    }
     geocoder.current.getAddress([location.lng, location.lat], (status: string, result: any) => {
-      if (status === 'complete' && result.regeocode) {
+      if (status === 'complete' && result?.regeocode?.formattedAddress) {
         const address = result.regeocode.formattedAddress;
         setSelectedAddress(address);
         onLocationChange({ ...location, address });
       } else {
-        setSelectedAddress('无法获取地址信息');
+        const fallbackAddress = formatCoordinateAddress(location);
+        setSelectedAddress(fallbackAddress);
+        onLocationChange({ ...location, address: fallbackAddress });
       }
     });
   };

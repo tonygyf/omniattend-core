@@ -122,6 +122,8 @@ CREATE TABLE CheckinTask (
     locationRadiusM INTEGER,
     gestureSequence TEXT,
     passwordPlain   TEXT,
+    faceRequired    INTEGER NOT NULL DEFAULT 0 CHECK(faceRequired IN (0, 1)),
+    faceMinScore    REAL CHECK(faceMinScore >= 0 AND faceMinScore <= 1),
     createdAt       TEXT DEFAULT (CURRENT_TIMESTAMP),
     FOREIGN KEY (classId)   REFERENCES Classroom(id) ON DELETE CASCADE,
     FOREIGN KEY (teacherId) REFERENCES Teacher(id)   ON DELETE CASCADE

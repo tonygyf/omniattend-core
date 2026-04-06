@@ -15,7 +15,11 @@ function parseCheckinDateTime(rawValue: any): Date | null {
 
 // 1. Create Check-in Task
 export async function createCheckinTask(db: D1Database, taskData: any) {
-    const { classId, teacherId, title, startAt, endAt, status, locationLat, locationLng, locationRadiusM, gestureSequence, passwordPlain } = taskData;
+    const {
+        classId, teacherId, title, startAt, endAt, status,
+        locationLat, locationLng, locationRadiusM, gestureSequence, passwordPlain,
+        faceRequired, faceMinScore
+    } = taskData;
 
     if (!classId || !teacherId || !title || !startAt || !endAt) {
         throw new Error("classId, teacherId, title, startAt, and endAt are required.");
@@ -30,9 +34,20 @@ export async function createCheckinTask(db: D1Database, taskData: any) {
         throw new Error("End time must be after start time.");
     }
 
+    const normalizedFaceRequired = faceRequired === true || faceRequired === 1 || faceRequired === '1' ? 1 : 0;
+    const faceScoreCandidate = faceMinScore == null ? null : Number(faceMinScore);
+    const normalizedFaceMinScore = Number.isFinite(faceScoreCandidate as number) ? (faceScoreCandidate as number) : null;
+    if (normalizedFaceMinScore != null && (normalizedFaceMinScore < 0 || normalizedFaceMinScore > 1)) {
+        throw new Error("faceMinScore must be between 0 and 1.");
+    }
+
     const ps = db.prepare(`
-        INSERT INTO CheckinTask (classId, teacherId, title, startAt, endAt, status, locationLat, locationLng, locationRadiusM, gestureSequence, passwordPlain)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO CheckinTask (
+            classId, teacherId, title, startAt, endAt, status,
+            locationLat, locationLng, locationRadiusM, gestureSequence, passwordPlain,
+            faceRequired, faceMinScore
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
         classId,
         teacherId,
@@ -44,7 +59,9 @@ export async function createCheckinTask(db: D1Database, taskData: any) {
         locationLng ?? null,
         locationRadiusM ?? null,
         gestureSequence ?? null,
-        passwordPlain ?? null
+        passwordPlain ?? null,
+        normalizedFaceRequired,
+        normalizedFaceMinScore
     );
 
     return await ps.run();
@@ -185,6 +202,27 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
     }
     if (normalizedFaceScore != null) {
         reasons.push(`Face score: ${normalizedFaceScore.toFixed(4)}`);
+    }
+
+    const taskFaceRequired = Number(task.faceRequired || 0) === 1;
+    const taskFaceMinScore = Number(task.faceMinScore);
+    const hasValidTaskFaceMinScore = Number.isFinite(taskFaceMinScore);
+    if (taskFaceRequired) {
+        const hasPhotoEvidence = (photoKey || '').toString().trim() || (photoUri || '').toString().trim();
+        if (!hasPhotoEvidence) {
+            autoResult = 'FAIL';
+            reasons.push('Face evidence is required.');
+        }
+        if (normalizedFacePassed == null && normalizedFaceScore == null) {
+            autoResult = 'FAIL';
+            reasons.push('Face verification result is required.');
+        }
+        if (hasValidTaskFaceMinScore) {
+            if (normalizedFaceScore == null || normalizedFaceScore < taskFaceMinScore) {
+                autoResult = 'FAIL';
+                reasons.push(`Face score below threshold (${taskFaceMinScore.toFixed(2)}).`);
+            }
+        }
     }
 
     const finalResult = autoResult === 'PASS' ? 'APPROVED' : 'PENDING_REVIEW';

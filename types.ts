@@ -126,6 +126,8 @@ export interface CheckinTask {
   locationRadiusM?: number;
   gestureSequence?: string;
   passwordPlain?: string;
+  faceRequired?: number | boolean;
+  faceMinScore?: number;
   createdAt: string;
 }
 
@@ -165,6 +167,8 @@ export interface CreateCheckinTaskRequest {
   locationRadiusM?: number | null;
   gestureSequence?: string | null;
   passwordPlain?: string | null;
+  faceRequired?: boolean | null;
+  faceMinScore?: number | null;
 }
 
 export interface CheckinSubmissionRequest {

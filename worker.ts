@@ -856,7 +856,14 @@ export default {
         // POST /api/checkin/tasks - Create a check-in task
         if (path === "/api/checkin/tasks" && method === "POST") {
             try {
-                const body = await request.json();
+                const body = await request.json() as any;
+                if (body && Object.prototype.hasOwnProperty.call(body, "faceRequired")) {
+                  body.faceRequired = body.faceRequired === true || body.faceRequired === 1 || body.faceRequired === "1";
+                }
+                if (body && body.faceMinScore !== undefined && body.faceMinScore !== null && body.faceMinScore !== "") {
+                  const parsed = Number(body.faceMinScore);
+                  body.faceMinScore = Number.isFinite(parsed) ? parsed : null;
+                }
                 const result = await createCheckinTask(env.DB, body);
                 return Response.json({ ok: true, success: true, id: result.meta.last_row_id, data: { id: result.meta.last_row_id } }, { status: 201, headers: corsHeaders });
             } catch (e: any) {
