@@ -14,10 +14,8 @@ import { fetchDashboardStats, syncDataWithCloudflare } from '../services/dataSer
 import { DashboardStats } from '../types';
 import ErrorBoundary from '../components/ErrorBoundary';
 import ClientOnly from '../components/ClientOnly';
-import { useAuth } from '../context/AuthContext';
 
 const Dashboard: React.FC = () => {
-  const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -26,8 +24,7 @@ const Dashboard: React.FC = () => {
 
   const loadStats = async (mounted: boolean) => {
     try {
-      if (!user?.id) return;
-      const data = await fetchDashboardStats(Number(user.id));
+      const data = await fetchDashboardStats();
       if (mounted) {
         setStats(data);
         setLoading(false);
@@ -47,7 +44,7 @@ const Dashboard: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [user?.id]);
+  }, []);
 
   const handleSync = async () => {
     setSyncing(true);

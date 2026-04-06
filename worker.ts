@@ -150,6 +150,27 @@ export default {
                 ELSE datetime(decidedAt, 'localtime')
               END
             `;
+            const normalizedTaskStartAtExpr = `
+              CASE
+                WHEN typeof(startAt) = 'integer' THEN datetime(
+                  CASE
+                    WHEN startAt > 1000000000000 THEN startAt / 1000
+                    ELSE startAt
+                  END,
+                  'unixepoch',
+                  'localtime'
+                )
+                WHEN startAt GLOB '[0-9]*' THEN datetime(
+                  CASE
+                    WHEN CAST(startAt AS INTEGER) > 1000000000000 THEN CAST(startAt AS INTEGER) / 1000
+                    ELSE CAST(startAt AS INTEGER)
+                  END,
+                  'unixepoch',
+                  'localtime'
+                )
+                ELSE datetime(startAt, 'localtime')
+              END
+            `;
             let totalUsersRow: any = null;
             let presentRow: any = null;
             let absentRow: any = null;
@@ -239,10 +260,10 @@ export default {
               ).first();
               
               const trendResult = await env.DB.prepare(
-                `SELECT date(${normalizedDecidedAtExpr}) as day, COUNT(*) as count
-                 FROM AttendanceResult
-                 WHERE datetime(${normalizedDecidedAtExpr}) >= datetime('now', 'localtime', '-6 day')
-                 GROUP BY date(${normalizedDecidedAtExpr})
+                `SELECT date(${normalizedTaskStartAtExpr}) as day, COUNT(*) as count
+                 FROM CheckinTask
+                 WHERE datetime(${normalizedTaskStartAtExpr}) >= datetime('now', 'localtime', '-6 day')
+                 GROUP BY date(${normalizedTaskStartAtExpr})
                  ORDER BY day ASC`
               ).all();
               trendRows = trendResult.results || [];
@@ -1130,33 +1151,24 @@ export default {
         // GET /api/insights/attendance-summary - 获取考勤洞察数据
         if (path === "/api/insights/attendance-summary" && method === "GET") {
           try {
-            const teacherId = url.searchParams.get("teacherId");
-            if (!teacherId) {
-              return Response.json({ error: "teacherId is required" }, { status: 400, headers: corsHeaders });
-            }
-
             const query = `
               SELECT 
                 s.id as studentId,
                 s.name as studentName,
                 s.sid as studentSid,
                 c.name as className,
-                COUNT(ses.id) as totalSessions,
-                SUM(CASE WHEN ses.id IS NOT NULL AND ar.status = 'Present' THEN 1 ELSE 0 END) as presentCount,
-                SUM(CASE WHEN ses.id IS NOT NULL AND ar.status = 'Late' THEN 1 ELSE 0 END) as lateCount,
-                SUM(CASE WHEN ses.id IS NOT NULL AND ar.status = 'Absent' THEN 1 ELSE 0 END) as absentCount
+                COUNT(ar.id) as totalSessions,
+                SUM(CASE WHEN ar.status = 'Present' THEN 1 ELSE 0 END) as presentCount,
+                SUM(CASE WHEN ar.status = 'Late' THEN 1 ELSE 0 END) as lateCount,
+                SUM(CASE WHEN ar.status = 'Absent' THEN 1 ELSE 0 END) as absentCount
               FROM Student s
               JOIN Classroom c ON s.classId = c.id
               LEFT JOIN AttendanceResult ar ON s.id = ar.studentId
-              LEFT JOIN AttendanceSession ses ON ar.sessionId = ses.id
-                AND ses.classId = s.classId
-                AND ses.teacherId = c.teacherId
-              WHERE c.teacherId = ?
               GROUP BY s.id, s.name, s.sid, c.name
               ORDER BY lateCount DESC, absentCount DESC, s.name ASC;
             `;
 
-            const { results } = await env.DB.prepare(query).bind(teacherId).all();
+            const { results } = await env.DB.prepare(query).all();
 
             return Response.json({ data: results }, { headers: corsHeaders });
 

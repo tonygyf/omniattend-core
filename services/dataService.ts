@@ -202,7 +202,7 @@ export const fetchAllStudents = async (): Promise<User[]> => {
   }
 };
 
-export const fetchDashboardStats = async (teacherId: number): Promise<DashboardStats> => {
+export const fetchDashboardStats = async (): Promise<DashboardStats> => {
   if (USE_MOCK || isDemoAccount()) {
     await delay(800);
     const weeklyTrend = Array.from({ length: 7 }).map((_, idx) => {
@@ -215,7 +215,7 @@ export const fetchDashboardStats = async (teacherId: number): Promise<DashboardS
     return { totalUsers: 45, presentToday: 38, lateToday: 4, absentToday: 3, weeklyTrend, lateYesterday: 3, newStudentsThisWeek: 2 };
   }
   try {
-    const data = await safeFetchJSON<DashboardStats>(`${API_BASE_URL}/api/stats?teacherId=${teacherId}`);
+    const data = await safeFetchJSON<DashboardStats>(`${API_BASE_URL}/api/stats`);
     return data;
   } catch (e) {
     console.warn('Stats API failed, using empty fallback', e);
@@ -307,13 +307,13 @@ export const createCheckinTask = async (task: CreateCheckinTaskRequest): Promise
   }
 };
 
-export const fetchAttendanceAnalysis = async (teacherId: number): Promise<StudentAttendanceAnalysis[]> => {
+export const fetchAttendanceAnalysis = async (): Promise<StudentAttendanceAnalysis[]> => {
   if (isDemoAccount()) {
     await delay();
     return [];
   }
   try {
-    const url = `${API_BASE_URL}/api/insights/attendance-summary?teacherId=${teacherId}`;
+    const url = `${API_BASE_URL}/api/insights/attendance-summary`;
     const { data } = await safeFetchJSON<any>(url);
     return data || [];
   } catch (e) {

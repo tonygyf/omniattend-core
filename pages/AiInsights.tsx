@@ -54,11 +54,11 @@ const AiInsightsPage: React.FC = () => {
     return () => clearInterval(timer);
   }, [cooldown]);
 
-  const loadAnalysis = useCallback(async (teacherId: number) => {
+  const loadAnalysis = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchAttendanceAnalysis(teacherId);
+      const data = await fetchAttendanceAnalysis();
       setAnalysis(data);
     } catch (err) {
       console.error(err);
@@ -69,9 +69,8 @@ const AiInsightsPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const teacherId = Number(auth.user?.id);
-    if (Number.isFinite(teacherId) && teacherId > 0) {
-      loadAnalysis(teacherId);
+    if (auth.user?.id) {
+      loadAnalysis();
     }
   }, [auth.user?.id, loadAnalysis]);
 
@@ -94,7 +93,7 @@ const AiInsightsPage: React.FC = () => {
         lateToday: analysis.reduce((sum, s) => sum + s.lateCount, 0),
         absentToday: analysis.reduce((sum, s) => sum + s.absentCount, 0),
       };
-      const studentData = analysis.slice(0, 20).map(s => ({
+      const studentData = analysis.map(s => ({
         name: s.studentName,
         class: s.className,
         totalSessions: s.totalSessions,
