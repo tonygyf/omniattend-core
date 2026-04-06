@@ -142,7 +142,7 @@ export default {
                   'unixepoch',
                   'localtime'
                 )
-                WHEN decidedAt GLOB '[0-9]*' THEN datetime(
+                WHEN trim(decidedAt) GLOB '[0-9]*' AND trim(decidedAt) NOT GLOB '*[^0-9]*' THEN datetime(
                   CASE
                     WHEN CAST(decidedAt AS INTEGER) > 1000000000000 THEN CAST(decidedAt AS INTEGER) / 1000
                     ELSE CAST(decidedAt AS INTEGER)
@@ -163,7 +163,7 @@ export default {
                   'unixepoch',
                   'localtime'
                 )
-                WHEN startAt GLOB '[0-9]*' THEN datetime(
+                WHEN trim(startAt) GLOB '[0-9]*' AND trim(startAt) NOT GLOB '*[^0-9]*' THEN datetime(
                   CASE
                     WHEN CAST(startAt AS INTEGER) > 1000000000000 THEN CAST(startAt AS INTEGER) / 1000
                     ELSE CAST(startAt AS INTEGER)
@@ -184,7 +184,7 @@ export default {
                   'unixepoch',
                   'localtime'
                 )
-                WHEN submittedAt GLOB '[0-9]*' THEN datetime(
+                WHEN trim(submittedAt) GLOB '[0-9]*' AND trim(submittedAt) NOT GLOB '*[^0-9]*' THEN datetime(
                   CASE
                     WHEN CAST(submittedAt AS INTEGER) > 1000000000000 THEN CAST(submittedAt AS INTEGER) / 1000
                     ELSE CAST(submittedAt AS INTEGER)
