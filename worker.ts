@@ -129,6 +129,9 @@ export default {
             const teacherIdParam = url.searchParams.get("teacherId");
             const teacherId = teacherIdParam ? Number(teacherIdParam) : null;
             const useTeacherScope = Number.isFinite(teacherId) && (teacherId as number) > 0;
+            const rangeParam = (url.searchParams.get("range") || "day").toLowerCase();
+            const statsRange: "day" | "month" | "year" | "all" =
+              rangeParam === "month" || rangeParam === "year" || rangeParam === "all" ? (rangeParam as any) : "day";
             const normalizedDecidedAtExpr = `
               CASE
                 WHEN typeof(decidedAt) = 'integer' THEN datetime(
@@ -169,6 +172,27 @@ export default {
                   'localtime'
                 )
                 ELSE datetime(startAt, 'localtime')
+              END
+            `;
+            const normalizedSubmittedAtExpr = `
+              CASE
+                WHEN typeof(submittedAt) = 'integer' THEN datetime(
+                  CASE
+                    WHEN submittedAt > 1000000000000 THEN submittedAt / 1000
+                    ELSE submittedAt
+                  END,
+                  'unixepoch',
+                  'localtime'
+                )
+                WHEN submittedAt GLOB '[0-9]*' THEN datetime(
+                  CASE
+                    WHEN CAST(submittedAt AS INTEGER) > 1000000000000 THEN CAST(submittedAt AS INTEGER) / 1000
+                    ELSE CAST(submittedAt AS INTEGER)
+                  END,
+                  'unixepoch',
+                  'localtime'
+                )
+                ELSE datetime(submittedAt, 'localtime')
               END
             `;
             let totalUsersRow: any = null;
@@ -242,31 +266,127 @@ export default {
               ).bind(teacherId).all();
               trendRows = trendResult.results || [];
             } else {
+              const currentPeriodDecidedFilter =
+                statsRange === "month"
+                  ? `strftime('%Y-%m', ${normalizedDecidedAtExpr}) = strftime('%Y-%m', 'now', 'localtime')`
+                  : statsRange === "year"
+                    ? `strftime('%Y', ${normalizedDecidedAtExpr}) = strftime('%Y', 'now', 'localtime')`
+                    : statsRange === "all"
+                      ? "1=1"
+                      : `date(${normalizedDecidedAtExpr}) = date('now', 'localtime')`;
+              const previousPeriodDecidedFilter =
+                statsRange === "month"
+                  ? `strftime('%Y-%m', ${normalizedDecidedAtExpr}) = strftime('%Y-%m', 'now', 'localtime', '-1 month')`
+                  : statsRange === "year"
+                    ? `strftime('%Y', ${normalizedDecidedAtExpr}) = strftime('%Y', 'now', 'localtime', '-1 year')`
+                    : statsRange === "all"
+                      ? "1=0"
+                      : `date(${normalizedDecidedAtExpr}) = date('now', 'localtime', '-1 day')`;
+              const currentPeriodSubmittedFilter =
+                statsRange === "month"
+                  ? `strftime('%Y-%m', ${normalizedSubmittedAtExpr}) = strftime('%Y-%m', 'now', 'localtime')`
+                  : statsRange === "year"
+                    ? `strftime('%Y', ${normalizedSubmittedAtExpr}) = strftime('%Y', 'now', 'localtime')`
+                    : statsRange === "all"
+                      ? "1=1"
+                      : `date(${normalizedSubmittedAtExpr}) = date('now', 'localtime')`;
+              const previousPeriodSubmittedFilter =
+                statsRange === "month"
+                  ? `strftime('%Y-%m', ${normalizedSubmittedAtExpr}) = strftime('%Y-%m', 'now', 'localtime', '-1 month')`
+                  : statsRange === "year"
+                    ? `strftime('%Y', ${normalizedSubmittedAtExpr}) = strftime('%Y', 'now', 'localtime', '-1 year')`
+                    : statsRange === "all"
+                      ? "1=0"
+                      : `date(${normalizedSubmittedAtExpr}) = date('now', 'localtime', '-1 day')`;
+              const studentCreatedFilter =
+                statsRange === "month"
+                  ? "strftime('%Y-%m', datetime(createdAt, 'localtime')) = strftime('%Y-%m', 'now', 'localtime')"
+                  : statsRange === "year"
+                    ? "strftime('%Y', datetime(createdAt, 'localtime')) = strftime('%Y', 'now', 'localtime')"
+                    : statsRange === "all"
+                      ? "1=1"
+                      : "date(datetime(createdAt, 'localtime')) = date('now', 'localtime')";
+
               totalUsersRow = await env.DB.prepare("SELECT COUNT(*) as count FROM Student").first();
               presentRow = await env.DB.prepare(
-                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Present' AND date(${normalizedDecidedAtExpr}) = date('now', 'localtime')`
+                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Present' AND ${currentPeriodDecidedFilter}`
               ).first();
               absentRow = await env.DB.prepare(
-                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Absent' AND date(${normalizedDecidedAtExpr}) = date('now', 'localtime')`
+                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Absent' AND ${currentPeriodDecidedFilter}`
               ).first();
               lateTodayRow = await env.DB.prepare(
-                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Late' AND date(${normalizedDecidedAtExpr}) = date('now', 'localtime')`
+                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Late' AND ${currentPeriodDecidedFilter}`
               ).first();
               lateYesterdayRow = await env.DB.prepare(
-                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Late' AND date(${normalizedDecidedAtExpr}) = date('now', 'localtime', '-1 day')`
+                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Late' AND ${previousPeriodDecidedFilter}`
+              ).first();
+              const attendanceTodayTotalRow = await env.DB.prepare(
+                `SELECT COUNT(*) as count
+                 FROM AttendanceResult
+                 WHERE status IN ('Present', 'Late', 'Absent')
+                   AND ${currentPeriodDecidedFilter}`
               ).first();
               newStudentsThisWeekRow = await env.DB.prepare(
-                "SELECT COUNT(*) as count FROM Student WHERE datetime(createdAt, 'localtime') >= datetime('now', 'localtime', '-7 days')"
+                `SELECT COUNT(*) as count FROM Student WHERE ${studentCreatedFilter}`
               ).first();
               
-              const trendResult = await env.DB.prepare(
-                `SELECT date(${normalizedTaskStartAtExpr}) as day, COUNT(*) as count
-                 FROM CheckinTask
-                 WHERE datetime(${normalizedTaskStartAtExpr}) >= datetime('now', 'localtime', '-6 day')
-                 GROUP BY date(${normalizedTaskStartAtExpr})
-                 ORDER BY day ASC`
-              ).all();
+              const trendQuery =
+                statsRange === "month"
+                  ? `SELECT strftime('%Y-%m', ${normalizedTaskStartAtExpr}) as day, COUNT(*) as count
+                     FROM CheckinTask
+                     WHERE datetime(${normalizedTaskStartAtExpr}) >= datetime('now', 'localtime', '-5 month')
+                     GROUP BY strftime('%Y-%m', ${normalizedTaskStartAtExpr})
+                     ORDER BY day ASC`
+                  : statsRange === "year"
+                    ? `SELECT strftime('%Y', ${normalizedTaskStartAtExpr}) as day, COUNT(*) as count
+                       FROM CheckinTask
+                       WHERE datetime(${normalizedTaskStartAtExpr}) >= datetime('now', 'localtime', '-4 year')
+                       GROUP BY strftime('%Y', ${normalizedTaskStartAtExpr})
+                       ORDER BY day ASC`
+                    : statsRange === "all"
+                      ? `SELECT strftime('%Y', ${normalizedTaskStartAtExpr}) as day, COUNT(*) as count
+                         FROM CheckinTask
+                         GROUP BY strftime('%Y', ${normalizedTaskStartAtExpr})
+                         ORDER BY day ASC`
+                      : `SELECT date(${normalizedTaskStartAtExpr}) as day, COUNT(*) as count
+                         FROM CheckinTask
+                         WHERE datetime(${normalizedTaskStartAtExpr}) >= datetime('now', 'localtime', '-6 day')
+                         GROUP BY date(${normalizedTaskStartAtExpr})
+                         ORDER BY day ASC`;
+              const trendResult = await env.DB.prepare(trendQuery).all();
               trendRows = trendResult.results || [];
+
+              const attendanceTodayTotal = (attendanceTodayTotalRow?.count as number) || 0;
+              if (attendanceTodayTotal === 0) {
+                presentRow = await env.DB.prepare(
+                  `SELECT COUNT(*) as count
+                   FROM CheckinSubmission
+                   WHERE isLatest = 1
+                     AND finalResult = 'APPROVED'
+                     AND ${currentPeriodSubmittedFilter}`
+                ).first();
+                lateTodayRow = await env.DB.prepare(
+                  `SELECT COUNT(*) as count
+                   FROM CheckinSubmission
+                   WHERE isLatest = 1
+                     AND finalResult = 'PENDING_REVIEW'
+                     AND ${currentPeriodSubmittedFilter}`
+                ).first();
+                absentRow = await env.DB.prepare(
+                  `SELECT COUNT(*) as count
+                   FROM CheckinSubmission
+                   WHERE isLatest = 1
+                     AND finalResult = 'REJECTED'
+                     AND ${currentPeriodSubmittedFilter}`
+                ).first();
+                lateYesterdayRow = await env.DB.prepare(
+                  `SELECT COUNT(*) as count
+                   FROM CheckinSubmission
+                   WHERE isLatest = 1
+                     AND finalResult = 'PENDING_REVIEW'
+                     AND ${previousPeriodSubmittedFilter}`
+                ).first();
+              }
             }
             
             // Normalize to 7 days array with day labels (Mon..Sun)
@@ -278,12 +398,34 @@ export default {
               return `${y}-${m}-${day}`;
             };
             const days: { day: string; count: number }[] = [];
-            for (let i = 6; i >= 0; i--) {
-              const dateObj = new Date();
-              dateObj.setDate(dateObj.getDate() - i);
-              const isoDay = toLocalISODate(dateObj);
-              const row = trendRows.find((r: any) => (r.day || '').startsWith(isoDay));
-              days.push({ day: makeDayLabel(dateObj), count: row ? (row.count as number) : 0 });
+            if (statsRange === "day") {
+              for (let i = 6; i >= 0; i--) {
+                const dateObj = new Date();
+                dateObj.setDate(dateObj.getDate() - i);
+                const isoDay = toLocalISODate(dateObj);
+                const row = trendRows.find((r: any) => (r.day || '').startsWith(isoDay));
+                days.push({ day: makeDayLabel(dateObj), count: row ? (row.count as number) : 0 });
+              }
+            } else if (statsRange === "month") {
+              for (let i = 5; i >= 0; i--) {
+                const dateObj = new Date();
+                dateObj.setMonth(dateObj.getMonth() - i);
+                const key = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+                const row = trendRows.find((r: any) => r.day === key);
+                days.push({ day: `${dateObj.getMonth() + 1}月`, count: row ? (row.count as number) : 0 });
+              }
+            } else if (statsRange === "year") {
+              for (let i = 4; i >= 0; i--) {
+                const dateObj = new Date();
+                dateObj.setFullYear(dateObj.getFullYear() - i);
+                const key = String(dateObj.getFullYear());
+                const row = trendRows.find((r: any) => r.day === key);
+                days.push({ day: key, count: row ? (row.count as number) : 0 });
+              }
+            } else {
+              for (const row of trendRows) {
+                days.push({ day: String(row.day || '未知'), count: Number(row.count || 0) });
+              }
             }
             
             return Response.json({

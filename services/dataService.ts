@@ -202,7 +202,7 @@ export const fetchAllStudents = async (): Promise<User[]> => {
   }
 };
 
-export const fetchDashboardStats = async (): Promise<DashboardStats> => {
+export const fetchDashboardStats = async (range: 'day' | 'month' | 'year' | 'all' = 'day'): Promise<DashboardStats> => {
   if (USE_MOCK || isDemoAccount()) {
     await delay(800);
     const weeklyTrend = Array.from({ length: 7 }).map((_, idx) => {
@@ -215,7 +215,7 @@ export const fetchDashboardStats = async (): Promise<DashboardStats> => {
     return { totalUsers: 45, presentToday: 38, lateToday: 4, absentToday: 3, weeklyTrend, lateYesterday: 3, newStudentsThisWeek: 2 };
   }
   try {
-    const data = await safeFetchJSON<DashboardStats>(`${API_BASE_URL}/api/stats`);
+    const data = await safeFetchJSON<DashboardStats>(`${API_BASE_URL}/api/stats?range=${range}`);
     return data;
   } catch (e) {
     console.warn('Stats API failed, using empty fallback', e);

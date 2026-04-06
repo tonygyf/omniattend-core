@@ -15,19 +15,21 @@ import { DashboardStats } from '../types';
 import ErrorBoundary from '../components/ErrorBoundary';
 import ClientOnly from '../components/ClientOnly';
 
+type StatsRange = 'day' | 'month' | 'year' | 'all';
+
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [statsRange, setStatsRange] = useState<StatsRange>(() => (localStorage.getItem('dashboard_stats_range') as StatsRange) || 'day');
 
   const [showChart, setShowChart] = useState(false);
 
   const loadStats = async (mounted: boolean) => {
     try {
-      const data = await fetchDashboardStats();
+      const data = await fetchDashboardStats(statsRange);
       if (mounted) {
         setStats(data);
-        setLoading(false);
 
         requestAnimationFrame(() => {
           if (mounted) setShowChart(true);
@@ -35,8 +37,16 @@ const Dashboard: React.FC = () => {
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      if (mounted) {
+        setLoading(false);
+      }
     }
   };
+
+  useEffect(() => {
+    localStorage.setItem('dashboard_stats_range', statsRange);
+  }, [statsRange]);
 
   useEffect(() => {
     let mounted = true;
@@ -44,7 +54,7 @@ const Dashboard: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [statsRange]);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -70,14 +80,22 @@ const Dashboard: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-800">仪表盘概览</h1>
           <p className="text-slate-500">欢迎回来，今日概览如下。</p>
         </div>
-        <button 
-            onClick={handleSync}
-            disabled={syncing}
-            className={`flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors shadow-sm ${syncing ? 'opacity-70' : ''}`}
-        >
-          <RefreshCw size={16} className={`${syncing ? 'animate-spin' : ''}`} />
-          {syncing ? '正在同步 D1...' : '同步数据'}
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
+            <button onClick={() => setStatsRange('day')} className={`px-3 py-1 rounded-md text-sm font-medium ${statsRange === 'day' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>日</button>
+            <button onClick={() => setStatsRange('month')} className={`px-3 py-1 rounded-md text-sm font-medium ${statsRange === 'month' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>月</button>
+            <button onClick={() => setStatsRange('year')} className={`px-3 py-1 rounded-md text-sm font-medium ${statsRange === 'year' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>年</button>
+            <button onClick={() => setStatsRange('all')} className={`px-3 py-1 rounded-md text-sm font-medium ${statsRange === 'all' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>总</button>
+          </div>
+          <button 
+              onClick={handleSync}
+              disabled={syncing}
+              className={`flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors shadow-sm ${syncing ? 'opacity-70' : ''}`}
+          >
+            <RefreshCw size={16} className={`${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? '正在同步 D1...' : '同步数据'}
+          </button>
+        </div>
       </div>
 
       {/* Stat Cards */}
