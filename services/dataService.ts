@@ -202,13 +202,20 @@ export const fetchAllStudents = async (): Promise<User[]> => {
   }
 };
 
-export const fetchDashboardStats = async (): Promise<DashboardStats> => {
+export const fetchDashboardStats = async (teacherId: number): Promise<DashboardStats> => {
   if (USE_MOCK || isDemoAccount()) {
     await delay(800);
-    return { totalUsers: 45, presentToday: 38, lateToday: 4, absentToday: 3, weeklyTrend: [], lateYesterday: 0, newStudentsThisWeek: 0 };
+    const weeklyTrend = Array.from({ length: 7 }).map((_, idx) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (6 - idx));
+      const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
+      const seed = [32, 28, 35, 31, 40, 37, 38][idx];
+      return { day, count: seed };
+    });
+    return { totalUsers: 45, presentToday: 38, lateToday: 4, absentToday: 3, weeklyTrend, lateYesterday: 3, newStudentsThisWeek: 2 };
   }
   try {
-    const data = await safeFetchJSON<DashboardStats>(`${API_BASE_URL}/api/stats`);
+    const data = await safeFetchJSON<DashboardStats>(`${API_BASE_URL}/api/stats?teacherId=${teacherId}`);
     return data;
   } catch (e) {
     console.warn('Stats API failed, using empty fallback', e);

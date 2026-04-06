@@ -69,8 +69,9 @@ const AiInsightsPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (auth.user?.id) {
-      loadAnalysis(auth.user.id);
+    const teacherId = Number(auth.user?.id);
+    if (Number.isFinite(teacherId) && teacherId > 0) {
+      loadAnalysis(teacherId);
     }
   }, [auth.user?.id, loadAnalysis]);
 
@@ -168,7 +169,7 @@ const AiInsightsPage: React.FC = () => {
         </div>
         <h1 className="text-3xl font-bold text-slate-900">智能考勤洞察</h1>
         <p className="text-slate-500 mt-1 max-w-xl mx-auto">
-          基于历史数据，自动识别考勤模式与风险学生。
+          基于当前教师班级考勤数据，自动识别考勤模式与风险学生。
         </p>
       </div>
 
@@ -310,7 +311,7 @@ const StudentDetailView: React.FC<{ analysis: StudentAttendanceAnalysis[] }> = (
               <td className="px-6 py-4 text-center text-green-600">{student.presentCount}</td>
               <td className="px-6 py-4 text-center text-amber-600">{student.lateCount}</td>
               <td className="px-6 py-4 text-center text-red-600">{student.absentCount}</td>
-              <td className="px-6 py-4">{((student.presentCount / student.totalSessions) * 100).toFixed(0)}%</td>
+              <td className="px-6 py-4">{student.totalSessions > 0 ? ((student.presentCount / student.totalSessions) * 100).toFixed(0) : '0'}%</td>
             </motion.tr>
           ))}
         </AnimatePresence>
@@ -329,7 +330,9 @@ const ClassSummaryView: React.FC<{ analysis: StudentAttendanceAnalysis[] }> = ({
     return Object.entries(grouped).map(([className, students]) => ({
       className,
       studentCount: students.length,
-      avgAttendance: students.reduce((acc, s) => acc + (s.presentCount / s.totalSessions), 0) / students.length * 100,
+      avgAttendance: students.length > 0
+        ? students.reduce((acc, s) => acc + (s.totalSessions > 0 ? (s.presentCount / s.totalSessions) : 0), 0) / students.length * 100
+        : 0,
       totalAbsences: students.reduce((acc, s) => acc + s.absentCount, 0),
       students
     }));

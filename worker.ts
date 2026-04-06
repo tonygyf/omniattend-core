@@ -126,36 +126,142 @@ export default {
         // 1. GET /api/stats - Dashboard metrics
         if (path === "/api/stats" && method === "GET") {
           try {
-            const totalUsersRow = await env.DB.prepare("SELECT COUNT(*) as count FROM Student").first();
-            const presentRow = await env.DB.prepare(
-              "SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Present' AND date(decidedAt) = date('now')"
-            ).first();
-            const absentRow = await env.DB.prepare(
-              "SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Absent' AND date(decidedAt) = date('now')"
-            ).first();
-            const lateTodayRow = await env.DB.prepare(
-              "SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Late' AND date(decidedAt) = date('now')"
-            ).first();
-            const lateYesterdayRow = await env.DB.prepare(
-              "SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Late' AND date(decidedAt) = date('now', '-1 day')"
-            ).first();
-            const newStudentsThisWeekRow = await env.DB.prepare(
-              "SELECT COUNT(*) as count FROM Student WHERE createdAt >= datetime('now', '-7 days')"
-            ).first();
-            
-            // Weekly trend: last 7 days total results per day
-            const { results: trendRows } = await env.DB.prepare(
-              "SELECT date(decidedAt) as day, COUNT(*) as count FROM AttendanceResult WHERE decidedAt >= datetime('now','-6 day') GROUP BY date(decidedAt) ORDER BY day ASC"
-            ).all();
+            const teacherIdParam = url.searchParams.get("teacherId");
+            const teacherId = teacherIdParam ? Number(teacherIdParam) : null;
+            const useTeacherScope = Number.isFinite(teacherId) && (teacherId as number) > 0;
+            const normalizedDecidedAtExpr = `
+              CASE
+                WHEN typeof(decidedAt) = 'integer' THEN datetime(
+                  CASE
+                    WHEN decidedAt > 1000000000000 THEN decidedAt / 1000
+                    ELSE decidedAt
+                  END,
+                  'unixepoch',
+                  'localtime'
+                )
+                WHEN decidedAt GLOB '[0-9]*' THEN datetime(
+                  CASE
+                    WHEN CAST(decidedAt AS INTEGER) > 1000000000000 THEN CAST(decidedAt AS INTEGER) / 1000
+                    ELSE CAST(decidedAt AS INTEGER)
+                  END,
+                  'unixepoch',
+                  'localtime'
+                )
+                ELSE datetime(decidedAt, 'localtime')
+              END
+            `;
+            let totalUsersRow: any = null;
+            let presentRow: any = null;
+            let absentRow: any = null;
+            let lateTodayRow: any = null;
+            let lateYesterdayRow: any = null;
+            let newStudentsThisWeekRow: any = null;
+            let trendRows: any[] = [];
+
+            if (useTeacherScope) {
+              totalUsersRow = await env.DB.prepare(
+                `SELECT COUNT(*) as count
+                 FROM Student s
+                 JOIN Classroom c ON s.classId = c.id
+                 WHERE c.teacherId = ?`
+              ).bind(teacherId).first();
+
+              presentRow = await env.DB.prepare(
+                `SELECT COUNT(*) as count
+                 FROM AttendanceResult ar
+                 JOIN AttendanceSession ses ON ar.sessionId = ses.id
+                 WHERE ses.teacherId = ?
+                   AND ar.status = 'Present'
+                   AND date(${normalizedDecidedAtExpr.replace(/decidedAt/g, "ar.decidedAt")}) = date('now', 'localtime')`
+              ).bind(teacherId).first();
+
+              absentRow = await env.DB.prepare(
+                `SELECT COUNT(*) as count
+                 FROM AttendanceResult ar
+                 JOIN AttendanceSession ses ON ar.sessionId = ses.id
+                 WHERE ses.teacherId = ?
+                   AND ar.status = 'Absent'
+                   AND date(${normalizedDecidedAtExpr.replace(/decidedAt/g, "ar.decidedAt")}) = date('now', 'localtime')`
+              ).bind(teacherId).first();
+
+              lateTodayRow = await env.DB.prepare(
+                `SELECT COUNT(*) as count
+                 FROM AttendanceResult ar
+                 JOIN AttendanceSession ses ON ar.sessionId = ses.id
+                 WHERE ses.teacherId = ?
+                   AND ar.status = 'Late'
+                   AND date(${normalizedDecidedAtExpr.replace(/decidedAt/g, "ar.decidedAt")}) = date('now', 'localtime')`
+              ).bind(teacherId).first();
+
+              lateYesterdayRow = await env.DB.prepare(
+                `SELECT COUNT(*) as count
+                 FROM AttendanceResult ar
+                 JOIN AttendanceSession ses ON ar.sessionId = ses.id
+                 WHERE ses.teacherId = ?
+                   AND ar.status = 'Late'
+                   AND date(${normalizedDecidedAtExpr.replace(/decidedAt/g, "ar.decidedAt")}) = date('now', 'localtime', '-1 day')`
+              ).bind(teacherId).first();
+
+              newStudentsThisWeekRow = await env.DB.prepare(
+                `SELECT COUNT(*) as count
+                 FROM Student s
+                 JOIN Classroom c ON s.classId = c.id
+                 WHERE c.teacherId = ?
+                   AND datetime(s.createdAt, 'localtime') >= datetime('now', 'localtime', '-7 days')`
+              ).bind(teacherId).first();
+
+              const trendResult = await env.DB.prepare(
+                `SELECT date(${normalizedDecidedAtExpr.replace(/decidedAt/g, "ar.decidedAt")}) as day, COUNT(*) as count
+                 FROM AttendanceResult ar
+                 JOIN AttendanceSession ses ON ar.sessionId = ses.id
+                 WHERE ses.teacherId = ?
+                   AND datetime(${normalizedDecidedAtExpr.replace(/decidedAt/g, "ar.decidedAt")}) >= datetime('now', 'localtime', '-6 day')
+                 GROUP BY date(${normalizedDecidedAtExpr.replace(/decidedAt/g, "ar.decidedAt")})
+                 ORDER BY day ASC`
+              ).bind(teacherId).all();
+              trendRows = trendResult.results || [];
+            } else {
+              totalUsersRow = await env.DB.prepare("SELECT COUNT(*) as count FROM Student").first();
+              presentRow = await env.DB.prepare(
+                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Present' AND date(${normalizedDecidedAtExpr}) = date('now', 'localtime')`
+              ).first();
+              absentRow = await env.DB.prepare(
+                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Absent' AND date(${normalizedDecidedAtExpr}) = date('now', 'localtime')`
+              ).first();
+              lateTodayRow = await env.DB.prepare(
+                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Late' AND date(${normalizedDecidedAtExpr}) = date('now', 'localtime')`
+              ).first();
+              lateYesterdayRow = await env.DB.prepare(
+                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Late' AND date(${normalizedDecidedAtExpr}) = date('now', 'localtime', '-1 day')`
+              ).first();
+              newStudentsThisWeekRow = await env.DB.prepare(
+                "SELECT COUNT(*) as count FROM Student WHERE datetime(createdAt, 'localtime') >= datetime('now', 'localtime', '-7 days')"
+              ).first();
+              
+              const trendResult = await env.DB.prepare(
+                `SELECT date(${normalizedDecidedAtExpr}) as day, COUNT(*) as count
+                 FROM AttendanceResult
+                 WHERE datetime(${normalizedDecidedAtExpr}) >= datetime('now', 'localtime', '-6 day')
+                 GROUP BY date(${normalizedDecidedAtExpr})
+                 ORDER BY day ASC`
+              ).all();
+              trendRows = trendResult.results || [];
+            }
             
             // Normalize to 7 days array with day labels (Mon..Sun)
-            const makeDayLabel = (d: Date) => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()];
+            const makeDayLabel = (d: Date) => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()];
+            const toLocalISODate = (d: Date) => {
+              const y = d.getFullYear();
+              const m = String(d.getMonth() + 1).padStart(2, '0');
+              const day = String(d.getDate()).padStart(2, '0');
+              return `${y}-${m}-${day}`;
+            };
             const days: { day: string; count: number }[] = [];
             for (let i = 6; i >= 0; i--) {
               const dateObj = new Date();
-              dateObj.setUTCDate(dateObj.getUTCDate() - i);
-              const isoDay = dateObj.toISOString().slice(0,10);
-              const row = (trendRows || []).find((r: any) => (r.day || '').startsWith(isoDay));
+              dateObj.setDate(dateObj.getDate() - i);
+              const isoDay = toLocalISODate(dateObj);
+              const row = trendRows.find((r: any) => (r.day || '').startsWith(isoDay));
               days.push({ day: makeDayLabel(dateObj), count: row ? (row.count as number) : 0 });
             }
             
@@ -1035,13 +1141,16 @@ export default {
                 s.name as studentName,
                 s.sid as studentSid,
                 c.name as className,
-                COUNT(ar.id) as totalSessions,
-                SUM(CASE WHEN ar.status = 'Present' THEN 1 ELSE 0 END) as presentCount,
-                SUM(CASE WHEN ar.status = 'Late' THEN 1 ELSE 0 END) as lateCount,
-                SUM(CASE WHEN ar.status = 'Absent' THEN 1 ELSE 0 END) as absentCount
+                COUNT(ses.id) as totalSessions,
+                SUM(CASE WHEN ses.id IS NOT NULL AND ar.status = 'Present' THEN 1 ELSE 0 END) as presentCount,
+                SUM(CASE WHEN ses.id IS NOT NULL AND ar.status = 'Late' THEN 1 ELSE 0 END) as lateCount,
+                SUM(CASE WHEN ses.id IS NOT NULL AND ar.status = 'Absent' THEN 1 ELSE 0 END) as absentCount
               FROM Student s
               JOIN Classroom c ON s.classId = c.id
               LEFT JOIN AttendanceResult ar ON s.id = ar.studentId
+              LEFT JOIN AttendanceSession ses ON ar.sessionId = ses.id
+                AND ses.classId = s.classId
+                AND ses.teacherId = c.teacherId
               WHERE c.teacherId = ?
               GROUP BY s.id, s.name, s.sid, c.name
               ORDER BY lateCount DESC, absentCount DESC, s.name ASC;

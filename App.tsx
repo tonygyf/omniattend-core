@@ -1,16 +1,17 @@
-import React, { useState } from 'react';
+import React, { Suspense, lazy, useState } from 'react';
 import { Menu } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Sidebar from './components/Sidebar';
-import Dashboard from './pages/Dashboard';
-import UsersPage from './pages/Users';
-import AttendancePage from './pages/Attendance';
-import AiInsights from './pages/AiInsights';
-import SettingsPage from './pages/Settings';
-import ClassroomPage from './pages/Classroom';
-import Login from './pages/Login';
-import Register from './pages/Register';
 import ErrorBoundary from './components/ErrorBoundary';
+
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const UsersPage = lazy(() => import('./pages/Users'));
+const AttendancePage = lazy(() => import('./pages/Attendance'));
+const AiInsights = lazy(() => import('./pages/AiInsights'));
+const SettingsPage = lazy(() => import('./pages/Settings'));
+const ClassroomPage = lazy(() => import('./pages/Classroom'));
+const Login = lazy(() => import('./pages/Login'));
+const Register = lazy(() => import('./pages/Register'));
 
 interface ViewingClass {
   id: number;
@@ -32,9 +33,17 @@ const AppContent = () => {
   // Auth Flow
   if (!user) {
     if (authPage === 'register') {
-      return <Register onNavigateLogin={() => setAuthPage('login')} />;
+      return (
+        <Suspense fallback={<div className="h-screen flex items-center justify-center bg-slate-50 text-slate-400">Loading...</div>}>
+          <Register onNavigateLogin={() => setAuthPage('login')} />
+        </Suspense>
+      );
     }
-    return <Login onNavigateRegister={() => setAuthPage('register')} />;
+    return (
+      <Suspense fallback={<div className="h-screen flex items-center justify-center bg-slate-50 text-slate-400">Loading...</div>}>
+        <Login onNavigateRegister={() => setAuthPage('register')} />
+      </Suspense>
+    );
   }
 
   // Protected App Flow
@@ -100,7 +109,9 @@ const AppContent = () => {
         <main className="flex-1 overflow-y-auto p-4 lg:p-8">
           <div className="max-w-7xl mx-auto">
             <ErrorBoundary>
-              {renderPage()}
+              <Suspense fallback={<div className="h-40 flex items-center justify-center text-slate-500">页面加载中...</div>}>
+                {renderPage()}
+              </Suspense>
             </ErrorBoundary>
           </div>
         </main>
