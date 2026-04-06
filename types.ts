@@ -144,6 +144,10 @@ export interface CheckinSubmission {
   manualResult?: 'APPROVED' | 'REJECTED';
   finalResult: CheckinSubmissionStatus;
   reason?: string;
+  photoKey?: string;
+  photoUri?: string;
+  faceVerifyScore?: number;
+  faceVerifyPassed?: number;
   isLatest: number;
   reviewerId?: number;
   reviewedAt?: string;
@@ -220,6 +224,10 @@ export interface CurrentUser {
   status: CurrentUserStatus;
   submittedAt: string | null;
   reason: string | null;
+  photoKey?: string | null;
+  photoUri?: string | null;
+  faceVerifyScore?: number | null;
+  faceVerifyPassed?: number | null;
 }
 
 export interface CheckinTaskDetails {

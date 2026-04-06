@@ -933,7 +933,8 @@ export default {
                     return Response.json({ error: "studentId is required" }, { status: 400, headers: corsHeaders });
                 }
                 const { results } = await env.DB.prepare(
-                    `SELECT s.id, s.taskId, t.title, t.classId, s.submittedAt, s.finalResult, s.reason, s.gestureInput, s.passwordInput
+                    `SELECT s.id, s.taskId, t.title, t.classId, s.submittedAt, s.finalResult, s.reason, s.gestureInput, s.passwordInput,
+                            s.photoKey, s.photoUri, s.faceVerifyScore, s.faceVerifyPassed
                      FROM CheckinSubmission s
                      INNER JOIN CheckinTask t ON s.taskId = t.id
                      WHERE s.studentId = ?

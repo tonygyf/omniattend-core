@@ -163,17 +163,26 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
         reasons.push('Incorrect password.');
     }
 
-    // Optional cloud face verification result (no DB schema change).
-    if (typeof faceVerifyPassed === 'boolean' && !faceVerifyPassed) {
+    const scoreCandidate = typeof faceVerifyScore === 'number'
+        ? faceVerifyScore
+        : Number(faceVerifyScore);
+    const normalizedFaceScore = Number.isFinite(scoreCandidate) ? scoreCandidate : null;
+    let normalizedFacePassed: number | null = null;
+    if (typeof faceVerifyPassed === 'boolean') {
+        normalizedFacePassed = faceVerifyPassed ? 1 : 0;
+    } else if (typeof faceVerifyPassed === 'number') {
+        if (faceVerifyPassed === 1) normalizedFacePassed = 1;
+        if (faceVerifyPassed === 0) normalizedFacePassed = 0;
+    } else if (typeof faceVerifyPassed === 'string') {
+        const lowered = faceVerifyPassed.trim().toLowerCase();
+        if (lowered === 'true' || lowered === '1') normalizedFacePassed = 1;
+        if (lowered === 'false' || lowered === '0') normalizedFacePassed = 0;
+    }
+
+    if (normalizedFacePassed === 0) {
         autoResult = 'FAIL';
         reasons.push('Face verification failed.');
     }
-    const normalizedFaceScore = (typeof faceVerifyScore === 'number' && Number.isFinite(faceVerifyScore))
-        ? faceVerifyScore
-        : null;
-    const normalizedFacePassed = (typeof faceVerifyPassed === 'boolean')
-        ? (faceVerifyPassed ? 1 : 0)
-        : null;
     if (normalizedFaceScore != null) {
         reasons.push(`Face score: ${normalizedFaceScore.toFixed(4)}`);
     }
@@ -225,7 +234,11 @@ export async function getCheckinTaskDetails(db: D1Database, taskId: number) {
             s.sid,
             sub.finalResult AS status,
             sub.submittedAt,
-            sub.reason
+            sub.reason,
+            sub.photoKey,
+            sub.photoUri,
+            sub.faceVerifyScore,
+            sub.faceVerifyPassed
         FROM Student s
         LEFT JOIN CheckinSubmission sub ON s.id = sub.studentId AND sub.taskId = ? AND sub.isLatest = 1
         WHERE s.classId = ?
