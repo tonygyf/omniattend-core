@@ -174,27 +174,6 @@ export default {
                 ELSE datetime(startAt, 'localtime')
               END
             `;
-            const normalizedSubmittedAtExpr = `
-              CASE
-                WHEN typeof(submittedAt) = 'integer' THEN datetime(
-                  CASE
-                    WHEN submittedAt > 1000000000000 THEN submittedAt / 1000
-                    ELSE submittedAt
-                  END,
-                  'unixepoch',
-                  'localtime'
-                )
-                WHEN trim(submittedAt) GLOB '[0-9]*' AND trim(submittedAt) NOT GLOB '*[^0-9]*' THEN datetime(
-                  CASE
-                    WHEN CAST(submittedAt AS INTEGER) > 1000000000000 THEN CAST(submittedAt AS INTEGER) / 1000
-                    ELSE CAST(submittedAt AS INTEGER)
-                  END,
-                  'unixepoch',
-                  'localtime'
-                )
-                ELSE datetime(submittedAt, 'localtime')
-              END
-            `;
             let totalUsersRow: any = null;
             let presentRow: any = null;
             let absentRow: any = null;
@@ -266,38 +245,22 @@ export default {
               ).bind(teacherId).all();
               trendRows = trendResult.results || [];
             } else {
-              const currentPeriodDecidedFilter =
+              const currentPeriodTaskFilter =
                 statsRange === "month"
-                  ? `strftime('%Y-%m', ${normalizedDecidedAtExpr}) = strftime('%Y-%m', 'now', 'localtime')`
+                  ? `strftime('%Y-%m', ${normalizedTaskStartAtExpr}) = strftime('%Y-%m', 'now', 'localtime')`
                   : statsRange === "year"
-                    ? `strftime('%Y', ${normalizedDecidedAtExpr}) = strftime('%Y', 'now', 'localtime')`
+                    ? `strftime('%Y', ${normalizedTaskStartAtExpr}) = strftime('%Y', 'now', 'localtime')`
                     : statsRange === "all"
                       ? "1=1"
-                      : `date(${normalizedDecidedAtExpr}) = date('now', 'localtime')`;
-              const previousPeriodDecidedFilter =
+                      : `date(${normalizedTaskStartAtExpr}) = date('now', 'localtime')`;
+              const previousPeriodTaskFilter =
                 statsRange === "month"
-                  ? `strftime('%Y-%m', ${normalizedDecidedAtExpr}) = strftime('%Y-%m', 'now', 'localtime', '-1 month')`
+                  ? `strftime('%Y-%m', ${normalizedTaskStartAtExpr}) = strftime('%Y-%m', 'now', 'localtime', '-1 month')`
                   : statsRange === "year"
-                    ? `strftime('%Y', ${normalizedDecidedAtExpr}) = strftime('%Y', 'now', 'localtime', '-1 year')`
+                    ? `strftime('%Y', ${normalizedTaskStartAtExpr}) = strftime('%Y', 'now', 'localtime', '-1 year')`
                     : statsRange === "all"
                       ? "1=0"
-                      : `date(${normalizedDecidedAtExpr}) = date('now', 'localtime', '-1 day')`;
-              const currentPeriodSubmittedFilter =
-                statsRange === "month"
-                  ? `strftime('%Y-%m', ${normalizedSubmittedAtExpr}) = strftime('%Y-%m', 'now', 'localtime')`
-                  : statsRange === "year"
-                    ? `strftime('%Y', ${normalizedSubmittedAtExpr}) = strftime('%Y', 'now', 'localtime')`
-                    : statsRange === "all"
-                      ? "1=1"
-                      : `date(${normalizedSubmittedAtExpr}) = date('now', 'localtime')`;
-              const previousPeriodSubmittedFilter =
-                statsRange === "month"
-                  ? `strftime('%Y-%m', ${normalizedSubmittedAtExpr}) = strftime('%Y-%m', 'now', 'localtime', '-1 month')`
-                  : statsRange === "year"
-                    ? `strftime('%Y', ${normalizedSubmittedAtExpr}) = strftime('%Y', 'now', 'localtime', '-1 year')`
-                    : statsRange === "all"
-                      ? "1=0"
-                      : `date(${normalizedSubmittedAtExpr}) = date('now', 'localtime', '-1 day')`;
+                      : `date(${normalizedTaskStartAtExpr}) = date('now', 'localtime', '-1 day')`;
               const studentCreatedFilter =
                 statsRange === "month"
                   ? "strftime('%Y-%m', datetime(createdAt, 'localtime')) = strftime('%Y-%m', 'now', 'localtime')"
@@ -309,22 +272,45 @@ export default {
 
               totalUsersRow = await env.DB.prepare("SELECT COUNT(*) as count FROM Student").first();
               presentRow = await env.DB.prepare(
-                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Present' AND ${currentPeriodDecidedFilter}`
-              ).first();
-              absentRow = await env.DB.prepare(
-                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Absent' AND ${currentPeriodDecidedFilter}`
+                `SELECT COUNT(*) as count
+                 FROM CheckinSubmission sub
+                 JOIN CheckinTask t ON sub.taskId = t.id
+                 WHERE sub.isLatest = 1
+                   AND sub.finalResult = 'APPROVED'
+                   AND ${currentPeriodTaskFilter}`
               ).first();
               lateTodayRow = await env.DB.prepare(
-                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Late' AND ${currentPeriodDecidedFilter}`
+                `SELECT COUNT(*) as count
+                 FROM CheckinSubmission sub
+                 JOIN CheckinTask t ON sub.taskId = t.id
+                 WHERE sub.isLatest = 1
+                   AND sub.finalResult = 'PENDING_REVIEW'
+                   AND ${currentPeriodTaskFilter}`
               ).first();
               lateYesterdayRow = await env.DB.prepare(
-                `SELECT COUNT(*) as count FROM AttendanceResult WHERE status = 'Late' AND ${previousPeriodDecidedFilter}`
-              ).first();
-              const attendanceTodayTotalRow = await env.DB.prepare(
                 `SELECT COUNT(*) as count
-                 FROM AttendanceResult
-                 WHERE status IN ('Present', 'Late', 'Absent')
-                   AND ${currentPeriodDecidedFilter}`
+                 FROM CheckinSubmission sub
+                 JOIN CheckinTask t ON sub.taskId = t.id
+                 WHERE sub.isLatest = 1
+                   AND sub.finalResult = 'PENDING_REVIEW'
+                   AND ${previousPeriodTaskFilter}`
+              ).first();
+              absentRow = await env.DB.prepare(
+                `SELECT COALESCE(SUM(taskStats.classTotal - taskStats.submittedCount), 0) as count
+                 FROM (
+                   SELECT
+                     t.id as taskId,
+                     COUNT(DISTINCT s.id) as classTotal,
+                     COUNT(DISTINCT sub.studentId) as submittedCount
+                   FROM CheckinTask t
+                   JOIN Student s ON s.classId = t.classId
+                   LEFT JOIN CheckinSubmission sub
+                     ON sub.taskId = t.id
+                    AND sub.studentId = s.id
+                    AND sub.isLatest = 1
+                   WHERE ${currentPeriodTaskFilter}
+                   GROUP BY t.id
+                 ) taskStats`
               ).first();
               newStudentsThisWeekRow = await env.DB.prepare(
                 `SELECT COUNT(*) as count FROM Student WHERE ${studentCreatedFilter}`
@@ -355,38 +341,6 @@ export default {
                          ORDER BY day ASC`;
               const trendResult = await env.DB.prepare(trendQuery).all();
               trendRows = trendResult.results || [];
-
-              const attendanceTodayTotal = (attendanceTodayTotalRow?.count as number) || 0;
-              if (attendanceTodayTotal === 0) {
-                presentRow = await env.DB.prepare(
-                  `SELECT COUNT(*) as count
-                   FROM CheckinSubmission
-                   WHERE isLatest = 1
-                     AND finalResult = 'APPROVED'
-                     AND ${currentPeriodSubmittedFilter}`
-                ).first();
-                lateTodayRow = await env.DB.prepare(
-                  `SELECT COUNT(*) as count
-                   FROM CheckinSubmission
-                   WHERE isLatest = 1
-                     AND finalResult = 'PENDING_REVIEW'
-                     AND ${currentPeriodSubmittedFilter}`
-                ).first();
-                absentRow = await env.DB.prepare(
-                  `SELECT COUNT(*) as count
-                   FROM CheckinSubmission
-                   WHERE isLatest = 1
-                     AND finalResult = 'REJECTED'
-                     AND ${currentPeriodSubmittedFilter}`
-                ).first();
-                lateYesterdayRow = await env.DB.prepare(
-                  `SELECT COUNT(*) as count
-                   FROM CheckinSubmission
-                   WHERE isLatest = 1
-                     AND finalResult = 'PENDING_REVIEW'
-                     AND ${previousPeriodSubmittedFilter}`
-                ).first();
-              }
             }
             
             // Normalize to 7 days array with day labels (Mon..Sun)

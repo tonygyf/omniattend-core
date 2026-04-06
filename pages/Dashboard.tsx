@@ -70,8 +70,13 @@ const Dashboard: React.FC = () => {
   if (!stats) return null;
 
   // Calculate derived stats for trends
-  const attendanceRate = stats.totalUsers > 0 ? Math.round((stats.presentToday / stats.totalUsers) * 100) : 0;
+  const periodTotal = stats.presentToday + stats.lateToday + stats.absentToday;
+  const attendanceRate = periodTotal > 0 ? Math.round((stats.presentToday / periodTotal) * 100) : 0;
   const lateChange = stats.lateToday - stats.lateYesterday;
+  const rangeLabel = statsRange === 'day' ? '今日' : statsRange === 'month' ? '本月' : statsRange === 'year' ? '本年' : '总';
+  const previousLabel = statsRange === 'day' ? '昨日' : statsRange === 'month' ? '上月' : statsRange === 'year' ? '去年' : '上一周期';
+  const trendTitle = statsRange === 'day' ? '近 7 日签到任务趋势' : statsRange === 'month' ? '近 6 月签到任务趋势' : statsRange === 'year' ? '近 5 年签到任务趋势' : '历年签到任务趋势';
+  const growthLabel = statsRange === 'day' ? '今日新增' : statsRange === 'month' ? '本月新增' : statsRange === 'year' ? '本年新增' : '累计新增';
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -111,12 +116,12 @@ const Dashboard: React.FC = () => {
             value={stats.totalUsers} 
             icon={Users} 
             variant="blue"
-            trend={`本周 +${stats.newStudentsThisWeek}`}
+            trend={`${growthLabel} +${stats.newStudentsThisWeek}`}
           />
         </motion.div>
         <motion.div variants={itemVariants}>
           <StatCard 
-            title="今日到勤" 
+            title={`${rangeLabel}到勤`} 
             value={stats.presentToday} 
             icon={UserCheck} 
             variant="green"
@@ -125,16 +130,16 @@ const Dashboard: React.FC = () => {
         </motion.div>
         <motion.div variants={itemVariants}>
           <StatCard 
-            title="今日迟到" 
+            title={`${rangeLabel}迟到`} 
             value={stats.lateToday} 
             icon={Clock} 
             variant="amber"
-            trend={lateChange !== 0 ? `较昨日 ${lateChange > 0 ? '+' : ''}${lateChange}` : '较昨日持平'}
+            trend={lateChange !== 0 ? `较${previousLabel} ${lateChange > 0 ? '+' : ''}${lateChange}` : `较${previousLabel}持平`}
           />
         </motion.div>
         <motion.div variants={itemVariants}>
           <StatCard 
-            title="今日缺勤" 
+            title={`${rangeLabel}缺勤`} 
             value={stats.absentToday} 
             icon={UserX} 
             variant="red"
@@ -145,7 +150,7 @@ const Dashboard: React.FC = () => {
 
       {/* Main Chart Section */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <h2 className="text-lg font-semibold text-slate-800 mb-6">近 7 日考勤趋势</h2>
+        <h2 className="text-lg font-semibold text-slate-800 mb-6">{trendTitle}</h2>
         <div className="h-80 w-full">
           {showChart && stats && (
             <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 400, height: 300 }}>
