@@ -256,3 +256,69 @@ export interface StudentAttendanceAnalysis {
   lateCount: number;
   absentCount: number;
 }
+
+// ===== Face Vector Center =====
+export interface FaceTemplateSummaryItem {
+  studentId: number;
+  studentName: string;
+  studentSid: string;
+  classId: number;
+  className: string;
+  templateCount: number;
+  latestQuality: number;
+  modelVer?: string;
+  lastUpdatedAt?: string;
+}
+
+export interface FaceEnrollBatchResult {
+  jobType: 'ENROLL_BATCH';
+  status: 'SUCCEEDED' | 'PARTIAL' | 'FAILED';
+  totalCount: number;
+  successCount: number;
+  failCount: number;
+  modelVer: string;
+  simulated?: boolean;
+  classId?: number | null;
+  enrolled: Array<{
+    studentId: number;
+    embeddingId: number;
+    quality: number;
+  }>;
+  failures: Array<{
+    studentId: number;
+    reason: string;
+  }>;
+}
+
+export interface FaceVerifyBatchDetail {
+  studentId: number;
+  studentName: string;
+  className: string;
+  embeddingId?: number;
+  score: number;
+  passed: 0 | 1;
+  threshold?: number;
+  reason?: string;
+  mode?: 'COSINE' | 'QUALITY_SIM';
+}
+
+export interface FaceVerifyBatchResult {
+  jobType: 'VERIFY_BATCH';
+  status: 'SUCCEEDED' | 'FAILED';
+  threshold: number;
+  classId?: number | null;
+  totalCount: number;
+  successCount: number;
+  failCount: number;
+  avgScore: number;
+  simulated?: boolean;
+  details: FaceVerifyBatchDetail[];
+}
+
+export interface FaceModelStatus {
+  modelPath: string;
+  available: boolean;
+  status: number;
+  source?: 'ASSETS' | 'R2' | 'NONE';
+  message?: string;
+}

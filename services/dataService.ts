@@ -10,7 +10,11 @@ import {
   CheckinSubmissionRequest,
   ReviewSubmissionRequest,
   StudentAttendanceAnalysis,
-  Classroom
+  Classroom,
+  FaceTemplateSummaryItem,
+  FaceEnrollBatchResult,
+  FaceVerifyBatchResult,
+  FaceModelStatus
 } from '../types';
 
 const USE_MOCK = false;
@@ -405,5 +409,91 @@ export const reviewSubmission = async (submissionId: number, review: ReviewSubmi
   } catch (e) {
     console.error(`Review submission ${submissionId} error:`, e);
     return { success: false, error: '网络错误' };
+  }
+};
+
+export const fetchFaceTemplateSummary = async (classId?: number): Promise<FaceTemplateSummaryItem[]> => {
+  if (isDemoAccount()) {
+    await delay();
+    return [];
+  }
+  try {
+    let url = `${API_BASE_URL}/api/face/templates/summary`;
+    if (classId && classId > 0) {
+      url += `?classId=${classId}`;
+    }
+    const { data } = await safeFetchJSON<any>(url);
+    return data || [];
+  } catch (e) {
+    console.warn('Failed to fetch face template summary', e);
+    return [];
+  }
+};
+
+export const enrollFaceBatch = async (payload: {
+  classId?: number;
+  studentIds?: number[];
+  modelVer?: string;
+  maxStudents?: number;
+  samples?: Array<{ studentId: number; vector: number[]; quality?: number }>;
+}): Promise<{ success: boolean; data?: FaceEnrollBatchResult; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号仅可查看 mock 数据' };
+  }
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/face/jobs/enroll-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+      body: JSON.stringify(payload)
+    });
+    const json: any = await res.json();
+    if (!res.ok) {
+      return { success: false, error: json.error || '批量提取失败' };
+    }
+    return { success: true, data: json.data as FaceEnrollBatchResult };
+  } catch (e) {
+    console.error('Enroll face batch error:', e);
+    return { success: false, error: '网络错误' };
+  }
+};
+
+export const verifyFaceBatch = async (payload: {
+  classId?: number;
+  studentIds?: number[];
+  threshold?: number;
+  maxStudents?: number;
+  probes?: Array<{ studentId: number; vector: number[] }>;
+}): Promise<{ success: boolean; data?: FaceVerifyBatchResult; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号仅可查看 mock 数据' };
+  }
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/face/jobs/verify-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+      body: JSON.stringify(payload)
+    });
+    const json: any = await res.json();
+    if (!res.ok) {
+      return { success: false, error: json.error || '批量测试失败' };
+    }
+    return { success: true, data: json.data as FaceVerifyBatchResult };
+  } catch (e) {
+    console.error('Verify face batch error:', e);
+    return { success: false, error: '网络错误' };
+  }
+};
+
+export const fetchFaceModelStatus = async (): Promise<FaceModelStatus | null> => {
+  if (isDemoAccount()) {
+    await delay();
+    return { modelPath: '/models/mobilefacenet_float32.tflite', available: false, status: 0, message: 'demo account' };
+  }
+  try {
+    const { data } = await safeFetchJSON<any>(`${API_BASE_URL}/api/face/model/status`);
+    return data || null;
+  } catch (e) {
+    console.warn('Failed to fetch face model status', e);
+    return null;
   }
 };

@@ -75,6 +75,37 @@ function normalizeAvatarKey(rawKey: string, roleDir: "teachers" | "students", us
   return `avatars/${roleDir}/${userId}_${slug}_${Date.now()}.png`;
 }
 
+function toNumberArray(input: any): number[] {
+  if (Array.isArray(input)) {
+    return input.map((v) => Number(v)).filter((v) => Number.isFinite(v));
+  }
+  if (typeof input === "string") {
+    try {
+      const parsed = JSON.parse(input);
+      if (Array.isArray(parsed)) {
+        return parsed.map((v) => Number(v)).filter((v) => Number.isFinite(v));
+      }
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (!a.length || !b.length || a.length !== b.length) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return Math.max(0, Math.min(1, dot / (Math.sqrt(normA) * Math.sqrt(normB)) * 0.5 + 0.5));
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -1122,6 +1153,303 @@ export default {
            } catch (e: any) {
              return Response.json({ error: e.message }, { status: 400, headers: corsHeaders });
            }
+        }
+
+        // GET /api/face/templates/summary - 人脸模板汇总（学生维度）
+        if (path === "/api/face/templates/summary" && method === "GET") {
+          try {
+            const classId = Number(url.searchParams.get("classId") || 0);
+            const classFilter = classId > 0 ? "WHERE s.classId = ?" : "";
+            const bindParams = classId > 0 ? [classId] : [];
+
+            const query = `
+              SELECT
+                s.id AS studentId,
+                s.name AS studentName,
+                s.sid AS studentSid,
+                s.classId AS classId,
+                c.name AS className,
+                COUNT(fe.id) AS templateCount,
+                MAX(fe.createdAt) AS lastUpdatedAt,
+                MAX(COALESCE(fe.quality, 0)) AS latestQuality,
+                (
+                  SELECT fe2.modelVer
+                  FROM FaceEmbedding fe2
+                  WHERE fe2.studentId = s.id
+                  ORDER BY fe2.createdAt DESC, fe2.id DESC
+                  LIMIT 1
+                ) AS modelVer
+              FROM Student s
+              JOIN Classroom c ON c.id = s.classId
+              LEFT JOIN FaceEmbedding fe ON fe.studentId = s.id
+              ${classFilter}
+              GROUP BY s.id, s.name, s.sid, s.classId, c.name
+              ORDER BY templateCount ASC, latestQuality ASC, s.name ASC
+            `;
+
+            const { results } = await env.DB.prepare(query).bind(...bindParams).all();
+            return Response.json({ data: results || [] }, { headers: corsHeaders });
+          } catch (e: any) {
+            return Response.json({ error: e.message || "获取模板汇总失败" }, { status: 500, headers: corsHeaders });
+          }
+        }
+
+        // GET /api/face/model/status - 检测模型静态文件是否可访问
+        if (path === "/api/face/model/status" && method === "GET") {
+          const modelPath = "/models/mobilefacenet_float32.tflite";
+          const modelKey = "models/mobilefacenet_float32.tflite";
+          const modelUrl = new URL(modelPath, request.url).toString();
+          const errors: string[] = [];
+
+          try {
+            const assetResp = await env.ASSETS.fetch(new Request(modelUrl, { method: "GET" }));
+            if (assetResp.ok) {
+              return Response.json({
+                ok: true,
+                data: {
+                  modelPath,
+                  available: true,
+                  status: assetResp.status,
+                  source: "ASSETS"
+                }
+              }, { headers: corsHeaders });
+            }
+            errors.push(`ASSETS:${assetResp.status}`);
+          } catch (e: any) {
+            errors.push(`ASSETS_ERR:${e?.message || "unknown"}`);
+          }
+
+          try {
+            const obj = await env.R2.head(modelKey);
+            if (obj) {
+              return Response.json({
+                ok: true,
+                data: {
+                  modelPath,
+                  available: true,
+                  status: 200,
+                  source: "R2"
+                }
+              }, { headers: corsHeaders });
+            }
+            errors.push("R2:404");
+          } catch (e: any) {
+            errors.push(`R2_ERR:${e?.message || "unknown"}`);
+          }
+
+          return Response.json({
+            ok: true,
+            data: {
+              modelPath,
+              available: false,
+              status: 404,
+              source: "NONE",
+              message: errors.join("; ")
+            }
+          }, { headers: corsHeaders });
+        }
+
+        // POST /api/face/jobs/enroll-batch - 批量提取（P0: mock提取并落库）
+        if (path === "/api/face/jobs/enroll-batch" && method === "POST") {
+          try {
+            const body = await request.json() as any;
+            const classId = Number(body.classId || 0);
+            const modelVer = (body.modelVer || "mobilefacenet_float32.tflite").toString();
+            const maxStudents = Math.min(Number(body.maxStudents || 50), 200);
+            const studentIdsRaw = Array.isArray(body.studentIds) ? body.studentIds : [];
+            const studentIds = studentIdsRaw.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v) && v > 0);
+            const samplesRaw = Array.isArray(body.samples) ? body.samples : [];
+            const sampleMap = new Map<number, { vector: number[]; quality: number | null }>();
+            for (const sample of samplesRaw) {
+              const sid = Number(sample?.studentId || 0);
+              const vector = toNumberArray(sample?.vector);
+              if (!sid || !vector.length) continue;
+              const q = Number(sample?.quality);
+              const quality = Number.isFinite(q) ? Math.max(0, Math.min(1, q)) : null;
+              sampleMap.set(sid, { vector, quality });
+            }
+
+            let students: any[] = [];
+            if (studentIds.length > 0) {
+              const placeholders = studentIds.map(() => "?").join(", ");
+              const query = `SELECT id, classId, name FROM Student WHERE id IN (${placeholders}) LIMIT ?`;
+              const { results } = await env.DB.prepare(query).bind(...studentIds, maxStudents).all();
+              students = results || [];
+            } else if (classId > 0) {
+              const { results } = await env.DB.prepare(
+                `SELECT id, classId, name FROM Student WHERE classId = ? ORDER BY id ASC LIMIT ?`
+              ).bind(classId, maxStudents).all();
+              students = results || [];
+            } else {
+              return Response.json({ error: "classId 或 studentIds 至少提供一个" }, { status: 400, headers: corsHeaders });
+            }
+
+            const now = new Date().toISOString();
+            let successCount = 0;
+            const failures: any[] = [];
+            const enrolled: any[] = [];
+            const simulated = sampleMap.size === 0;
+
+            for (const student of students) {
+              try {
+                const provided = sampleMap.get(Number(student.id));
+                const vector = provided?.vector || Array.from({ length: 128 }, () => Number((Math.random() * 2 - 1).toFixed(6)));
+                const quality = provided?.quality ?? Number((0.7 + Math.random() * 0.29).toFixed(4));
+                const insertRes = await env.DB.prepare(
+                  `INSERT INTO FaceEmbedding (studentId, modelVer, vector, quality, createdAt)
+                   VALUES (?, ?, ?, ?, ?)`
+                ).bind(student.id, modelVer, JSON.stringify(vector), quality, now).run();
+                successCount += 1;
+                enrolled.push({
+                  studentId: student.id,
+                  embeddingId: insertRes.meta.last_row_id,
+                  quality
+                });
+              } catch (err: any) {
+                failures.push({
+                  studentId: student.id,
+                  reason: err?.message || "insert failed"
+                });
+              }
+            }
+
+            return Response.json({
+              ok: true,
+              data: {
+                jobType: "ENROLL_BATCH",
+                status: failures.length ? "PARTIAL" : "SUCCEEDED",
+                totalCount: students.length,
+                successCount,
+                failCount: failures.length,
+                modelVer,
+                simulated,
+                classId: classId || null,
+                enrolled: enrolled.slice(0, 30),
+                failures: failures.slice(0, 30)
+              }
+            }, { headers: corsHeaders });
+          } catch (e: any) {
+            return Response.json({ error: e.message || "批量提取失败" }, { status: 500, headers: corsHeaders });
+          }
+        }
+
+        // POST /api/face/jobs/verify-batch - 批量测试模型（P0: 基于现有模板打分）
+        if (path === "/api/face/jobs/verify-batch" && method === "POST") {
+          try {
+            const body = await request.json() as any;
+            const classId = Number(body.classId || 0);
+            const threshold = Number.isFinite(Number(body.threshold)) ? Number(body.threshold) : 0.75;
+            const maxStudents = Math.min(Number(body.maxStudents || 50), 200);
+            const studentIdsRaw = Array.isArray(body.studentIds) ? body.studentIds : [];
+            const studentIds = studentIdsRaw.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v) && v > 0);
+            const probesRaw = Array.isArray(body.probes) ? body.probes : [];
+            const probeMap = new Map<number, number[]>();
+            for (const probe of probesRaw) {
+              const sid = Number(probe?.studentId || 0);
+              const vector = toNumberArray(probe?.vector);
+              if (!sid || !vector.length) continue;
+              probeMap.set(sid, vector);
+            }
+
+            let students: any[] = [];
+            if (studentIds.length > 0) {
+              const placeholders = studentIds.map(() => "?").join(", ");
+              const query = `
+                SELECT s.id, s.classId, s.name, c.name AS className
+                FROM Student s
+                JOIN Classroom c ON c.id = s.classId
+                WHERE s.id IN (${placeholders})
+                LIMIT ?
+              `;
+              const { results } = await env.DB.prepare(query).bind(...studentIds, maxStudents).all();
+              students = results || [];
+            } else if (classId > 0) {
+              const { results } = await env.DB.prepare(
+                `SELECT s.id, s.classId, s.name, c.name AS className
+                 FROM Student s
+                 JOIN Classroom c ON c.id = s.classId
+                 WHERE s.classId = ?
+                 ORDER BY s.id ASC
+                 LIMIT ?`
+              ).bind(classId, maxStudents).all();
+              students = results || [];
+            } else {
+              return Response.json({ error: "classId 或 studentIds 至少提供一个" }, { status: 400, headers: corsHeaders });
+            }
+
+            const details: any[] = [];
+            let passCount = 0;
+            let failCount = 0;
+            let scoreSum = 0;
+            const simulated = probeMap.size === 0;
+
+            for (const student of students) {
+              const latestEmbedding = await env.DB.prepare(
+                `SELECT id, quality, vector
+                 FROM FaceEmbedding
+                 WHERE studentId = ?
+                 ORDER BY createdAt DESC, id DESC
+                 LIMIT 1`
+              ).bind(student.id).first<any>();
+
+              if (!latestEmbedding) {
+                failCount += 1;
+                details.push({
+                  studentId: student.id,
+                  studentName: student.name,
+                  className: student.className,
+                  score: 0,
+                  passed: 0,
+                  reason: "NO_TEMPLATE"
+                });
+                continue;
+              }
+
+              const embeddingVector = toNumberArray(latestEmbedding.vector);
+              const probeVector = probeMap.get(Number(student.id));
+              let score = 0;
+              if (probeVector && embeddingVector.length && probeVector.length === embeddingVector.length) {
+                score = Number(cosineSimilarity(probeVector, embeddingVector).toFixed(4));
+              } else {
+                const quality = Number(latestEmbedding.quality || 0);
+                const jitter = (Math.random() - 0.5) * 0.16;
+                score = Math.max(0, Math.min(1, Number((quality + jitter).toFixed(4))));
+              }
+              const passed = score >= threshold ? 1 : 0;
+              if (passed) passCount += 1; else failCount += 1;
+              scoreSum += score;
+
+              details.push({
+                studentId: student.id,
+                studentName: student.name,
+                className: student.className,
+                embeddingId: latestEmbedding.id,
+                score,
+                passed,
+                threshold,
+                mode: probeVector ? "COSINE" : "QUALITY_SIM"
+              });
+            }
+
+            const avgScore = students.length > 0 ? Number((scoreSum / students.length).toFixed(4)) : 0;
+            return Response.json({
+              ok: true,
+              data: {
+                jobType: "VERIFY_BATCH",
+                status: "SUCCEEDED",
+                threshold,
+                classId: classId || null,
+                totalCount: students.length,
+                successCount: passCount,
+                failCount,
+                avgScore,
+                simulated,
+                details
+              }
+            }, { headers: corsHeaders });
+          } catch (e: any) {
+            return Response.json({ error: e.message || "批量测试失败" }, { status: 500, headers: corsHeaders });
+          }
         }
 
         // PUT /api/student/profile/username

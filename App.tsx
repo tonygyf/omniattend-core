@@ -94,7 +94,8 @@ const AppContent = () => {
         {/* Mobile Header */}
         <header className="lg:hidden bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center justify-between z-10">
           <div className="flex items-center gap-2 font-bold text-lg text-slate-800 dark:text-white">
-             <div className="w-6 h-6 bg-blue-500 rounded flex items-center justify-center text-white text-xs">F</div>
+             <img src="/bluelogo.png" alt="FaceCheck logo light" className="w-6 h-6 object-contain dark:hidden" />
+             <img src="/blacklogo.png" alt="FaceCheck logo dark" className="w-6 h-6 object-contain hidden dark:block" />
              FaceCheck
           </div>
           <button 

@@ -277,7 +277,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
     { id: 'dashboard', label: '仪表盘', icon: LayoutDashboard },
     { id: 'classrooms', label: '班级管理', icon: Users },
     { id: 'attendance', label: '考勤与签到', icon: History },
-    { id: 'insights', label: 'AI 洞察', icon: BrainCircuit },
+    { id: 'insights', label: '人脸特征中心', icon: BrainCircuit },
   ];
 
   const handleNav = (id: string) => {
@@ -304,10 +304,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
         }`}
       >
         <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-          <div className="flex items-center gap-2 font-bold text-xl">
-            <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center">
-              <span className="text-white text-lg">F</span>
-            </div>
+          <div className="flex items-center gap-0 font-bold text-xl">
+            {/* Logo 已保持 w-20（80px），同时将 gap 从 2 调整为 1，使标题适当左移、整体更紧凑 */}
+            <img src="/bluelogo.png" alt="FaceCheck logo light" className="w-20 h-20 object-contain -ml-5 dark:hidden" />
+            <img src="/blacklogo.png" alt="FaceCheck logo dark" className="w-20 h-20 object-contain -ml-5 hidden dark:block" />
             FaceCheck
           </div>
           <button onClick={() => setIsOpen(false)} className="lg:hidden text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white">

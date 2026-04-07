@@ -1,178 +1,175 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { fetchAttendanceAnalysis } from '../services/dataService';
-import { generateAttendanceInsights } from '../services/groqService';
-import { StudentAttendanceAnalysis } from '../types';
+import { fetchClassrooms, fetchFaceTemplateSummary, enrollFaceBatch, verifyFaceBatch, fetchFaceModelStatus } from '../services/dataService';
+import { Classroom, FaceTemplateSummaryItem, FaceVerifyBatchResult, FaceModelStatus } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { Loader2, AlertTriangle, Sparkles, Bot, HelpCircle, List, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-
-type SortKey = keyof StudentAttendanceAnalysis | 'attendanceRate';
-
 import Modal from '../components/Modal';
 
-const COOLDOWN_SECONDS = 60;
+type SortKey = keyof FaceTemplateSummaryItem | 'hasTemplate';
 
 const AiInsightsPage: React.FC = () => {
-  const [analysis, setAnalysis] = useState<StudentAttendanceAnalysis[]>([]);
+  const [templates, setTemplates] = useState<FaceTemplateSummaryItem[]>([]);
+  const [classrooms, setClassrooms] = useState<Classroom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: 'asc' | 'desc' }>({
-    key: 'absentCount',
-    direction: 'desc'
+    key: 'templateCount',
+    direction: 'asc'
   });
-  const [insights, setInsights] = useState<string | null>(null);
-  const [generating, setGenerating] = useState(false);
   const [viewMode, setViewMode] = useState<'student' | 'class'>('student');
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
+
+  const [selectedClassId, setSelectedClassId] = useState<number>(0);
+  const [modelVer, setModelVer] = useState('mock-face-v1');
+  const [threshold, setThreshold] = useState(0.75);
+  const [maxStudents, setMaxStudents] = useState(50);
+  const [runningEnroll, setRunningEnroll] = useState(false);
+  const [runningVerify, setRunningVerify] = useState(false);
+  const [enrollMessage, setEnrollMessage] = useState<string | null>(null);
+  const [verifyResult, setVerifyResult] = useState<FaceVerifyBatchResult | null>(null);
+  const [modelStatus, setModelStatus] = useState<FaceModelStatus | null>(null);
+  const [checkingModel, setCheckingModel] = useState(false);
 
   const auth = useAuth();
 
-  const getCacheKey = useCallback(() => {
-    if (!auth.user?.id) return null;
-    const date = new Date().toISOString().split('T')[0];
-    return `insights_${auth.user.id}_${date}`;
-  }, [auth.user?.id]);
-
-  useEffect(() => {
-    const cacheKey = getCacheKey();
-    if (cacheKey) {
-      const cachedInsights = localStorage.getItem(cacheKey);
-      if (cachedInsights) {
-        setInsights(cachedInsights);
-      }
-    }
-  }, [getCacheKey]);
-
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (cooldown > 0) {
-      timer = setInterval(() => {
-        setCooldown(prev => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [cooldown]);
-
-  const loadAnalysis = useCallback(async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await fetchAttendanceAnalysis();
-      setAnalysis(data);
+      const [roomData, templateData] = await Promise.all([
+        fetchClassrooms(),
+        fetchFaceTemplateSummary(selectedClassId > 0 ? selectedClassId : undefined)
+      ]);
+      setClassrooms(roomData || []);
+      setTemplates(templateData || []);
     } catch (err) {
       console.error(err);
-      setError('无法加载考勤分析数据，请稍后重试。');
+      setError('无法加载人脸向量数据，请稍后重试。');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedClassId]);
 
   useEffect(() => {
     if (auth.user?.id) {
-      loadAnalysis();
+      loadData();
     }
-  }, [auth.user?.id, loadAnalysis]);
+  }, [auth.user?.id, loadData]);
 
-  const handleGenerateInsights = async () => {
-    const cacheKey = getCacheKey();
-    if (cacheKey) {
-      const cachedInsights = localStorage.getItem(cacheKey);
-      if (cachedInsights) {
-        setInsights(cachedInsights);
+  const handleEnrollBatch = async () => {
+    setRunningEnroll(true);
+    setError(null);
+    setEnrollMessage(null);
+    try {
+      const result = await enrollFaceBatch({
+        classId: selectedClassId > 0 ? selectedClassId : undefined,
+        modelVer,
+        maxStudents
+      });
+      if (!result.success || !result.data) {
+        setError(result.error || '批量提取失败');
         return;
       }
-    }
-
-    setGenerating(true);
-    setError(null); // Clear previous errors
-    try {
-      const stats = {
-        totalUsers: analysis.length,
-        presentToday: analysis.reduce((sum, s) => sum + s.presentCount, 0),
-        lateToday: analysis.reduce((sum, s) => sum + s.lateCount, 0),
-        absentToday: analysis.reduce((sum, s) => sum + s.absentCount, 0),
-      };
-      const studentData = analysis.map(s => ({
-        name: s.studentName,
-        class: s.className,
-        totalSessions: s.totalSessions,
-        present: s.presentCount,
-        late: s.lateCount,
-        absent: s.absentCount,
-        attendanceRate: s.totalSessions > 0 ? (s.presentCount / s.totalSessions).toFixed(2) : '0.00'
-      }));
-      
-      const result = await generateAttendanceInsights(stats, studentData);
-      setInsights(result);
-
-      if (cacheKey) {
-        localStorage.setItem(cacheKey, result);
-      }
-      
-      setCooldown(COOLDOWN_SECONDS);
+      setEnrollMessage(
+        `提取完成：总计 ${result.data.totalCount}，成功 ${result.data.successCount}，失败 ${result.data.failCount}，模型 ${result.data.modelVer}`
+      );
+      await loadData();
     } catch (e: any) {
-      console.error(e);
-      if (e.status === 429) {
-        setError('AI 调用过于频繁，请稍后再试。');
-      } else {
-        setError('生成洞察失败，请检查 AI 服务连接。');
-      }
-      setInsights(null); // Clear insights on error
+      setError(e?.message || '批量提取失败');
     } finally {
-      setGenerating(false);
+      setRunningEnroll(false);
     }
   };
 
-  const sortedAnalysis = useMemo(() => {
-    const items = [...analysis]
-    items.sort((a, b) => {
-      const aValue =
-        sortConfig.key === 'attendanceRate'
-          ? a.totalSessions
-            ? a.presentCount / a.totalSessions
-            : 0
-          : (a as any)[sortConfig.key]
-      const bValue =
-        sortConfig.key === 'attendanceRate'
-          ? b.totalSessions
-            ? b.presentCount / b.totalSessions
-            : 0
-          : (b as any)[sortConfig.key]
+  const handleVerifyBatch = async () => {
+    setRunningVerify(true);
+    setError(null);
+    setVerifyResult(null);
+    try {
+      const result = await verifyFaceBatch({
+        classId: selectedClassId > 0 ? selectedClassId : undefined,
+        threshold,
+        maxStudents
+      });
+      if (!result.success || !result.data) {
+        setError(result.error || '批量测试失败');
+        return;
+      }
+      setVerifyResult(result.data);
+    } catch (e: any) {
+      setError(e?.message || '批量测试失败');
+    } finally {
+      setRunningVerify(false);
+    }
+  };
 
-      if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1
-      if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1
-      return 0
-    })
-    return items
-  }, [analysis, sortConfig])
+  const handleCheckModel = async () => {
+    setCheckingModel(true);
+    try {
+      const status = await fetchFaceModelStatus();
+      setModelStatus(status);
+    } finally {
+      setCheckingModel(false);
+    }
+  };
+
+  const sortedTemplates = useMemo(() => {
+    const items = [...templates];
+    items.sort((a, b) => {
+      const aValue = sortConfig.key === 'hasTemplate' ? (a.templateCount > 0 ? 1 : 0) : ((a as any)[sortConfig.key] ?? 0);
+      const bValue = sortConfig.key === 'hasTemplate' ? (b.templateCount > 0 ? 1 : 0) : ((b as any)[sortConfig.key] ?? 0);
+      if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return items;
+  }, [templates, sortConfig]);
 
   const requestSort = (key: SortKey) => {
-    let direction: 'asc' | 'desc' = 'desc'
-    if (sortConfig.key === key && sortConfig.direction === 'desc') direction = 'asc'
-    setSortConfig({ key, direction })
-  }
+    let direction: 'asc' | 'desc' = 'desc';
+    if (sortConfig.key === key && sortConfig.direction === 'desc') direction = 'asc';
+    setSortConfig({ key, direction });
+  };
 
-  const atRiskStudents = useMemo(
-    () => analysis.filter(s => s.absentCount > 3 || s.lateCount > 5),
-    [analysis]
-  )
+  const riskStudents = useMemo(
+    () => templates.filter(s => s.templateCount === 0 || Number(s.latestQuality || 0) < 0.75),
+    [templates]
+  );
+
+  const classSummary = useMemo(() => {
+    const grouped: Record<string, FaceTemplateSummaryItem[]> = {};
+    templates.forEach(item => {
+      if (!grouped[item.className]) grouped[item.className] = [];
+      grouped[item.className].push(item);
+    });
+    return Object.entries(grouped).map(([className, list]) => {
+      const withTemplate = list.filter(v => v.templateCount > 0);
+      const avgQuality = withTemplate.length
+        ? withTemplate.reduce((sum, v) => sum + Number(v.latestQuality || 0), 0) / withTemplate.length
+        : 0;
+      return {
+        className,
+        studentCount: list.length,
+        withTemplateCount: withTemplate.length,
+        lowQualityCount: list.filter(v => Number(v.latestQuality || 0) > 0 && Number(v.latestQuality || 0) < 0.75).length,
+        avgQuality
+      };
+    });
+  }, [templates]);
 
   return (
     <motion.div translate="no" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-
-      {/* Header */}
       <div className="text-center">
         <div className="inline-flex items-center justify-center p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-lg mb-2">
           <Sparkles className="text-white w-8 h-8" />
         </div>
-        <h1 className="text-3xl font-bold text-slate-900">智能考勤洞察</h1>
+        <h1 className="text-3xl font-bold text-slate-900">人脸特征中心</h1>
         <p className="text-slate-500 mt-1 max-w-xl mx-auto">
-          基于当前教师班级考勤数据，自动识别考勤模式与风险学生。
+          保持原页面结构，用于管理学生人脸特征向量、批量提取模板、批量测试模型效果。
         </p>
       </div>
 
-      {/* AI Card */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -180,30 +177,96 @@ const AiInsightsPage: React.FC = () => {
       >
         <div className="flex items-center gap-3 mb-3">
           <Bot className="w-6 h-6" />
-          <h2 className="text-lg font-semibold">AI 智能洞察</h2>
+          <h2 className="text-lg font-semibold">人脸特征批任务</h2>
         </div>
 
-        {error && (
-            <div className="bg-red-800/50 p-3 rounded-lg text-sm mb-4">{error}</div>
-        )}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+          <select
+            className="bg-white/15 rounded-lg px-3 py-2 text-sm"
+            value={selectedClassId}
+            onChange={e => setSelectedClassId(Number(e.target.value))}
+          >
+            <option value={0}>全部班级</option>
+            {classrooms.map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <input
+            className="bg-white/15 rounded-lg px-3 py-2 text-sm"
+            value={modelVer}
+            onChange={e => setModelVer(e.target.value)}
+            placeholder="模型版本，如 mock-face-v1"
+          />
+          <input
+            className="bg-white/15 rounded-lg px-3 py-2 text-sm"
+            type="number"
+            step={0.01}
+            min={0}
+            max={1}
+            value={threshold}
+            onChange={e => setThreshold(Number(e.target.value))}
+            placeholder="阈值 0~1"
+          />
+          <input
+            className="bg-white/15 rounded-lg px-3 py-2 text-sm"
+            type="number"
+            min={1}
+            max={200}
+            value={maxStudents}
+            onChange={e => setMaxStudents(Number(e.target.value))}
+            placeholder="最大批量人数"
+          />
+        </div>
 
-        {insights && !generating ? (
-          <pre className="text-sm whitespace-pre-wrap font-sans animate-fade-in">{insights}</pre>
-        ) : (
+        <div className="flex flex-wrap items-center gap-3">
           <button
-            onClick={handleGenerateInsights}
-            disabled={generating || loading || cooldown > 0}
+            onClick={handleEnrollBatch}
+            disabled={runningEnroll || loading}
             className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
           >
-            {generating ? <Loader2 className="animate-spin w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
-            {generating ? '正在生成...' : cooldown > 0 ? `${cooldown}秒后可再试` : '生成考勤洞察'}
+            {runningEnroll ? <Loader2 className="animate-spin w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+            {runningEnroll ? '提取中...' : '批量提取向量'}
           </button>
+          <button
+            onClick={handleVerifyBatch}
+            disabled={runningVerify || loading}
+            className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
+          >
+            {runningVerify ? <Loader2 className="animate-spin w-4 h-4" /> : <Bot className="w-4 h-4" />}
+            {runningVerify ? '测试中...' : '批量验证模型'}
+          </button>
+          <button
+            onClick={handleCheckModel}
+            disabled={checkingModel || loading}
+            className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
+          >
+            {checkingModel ? <Loader2 className="animate-spin w-4 h-4" /> : <HelpCircle className="w-4 h-4" />}
+            {checkingModel ? '检测中...' : '检测模型可用性'}
+          </button>
+          {enrollMessage && <span className="text-sm bg-white/15 px-3 py-2 rounded-lg">{enrollMessage}</span>}
+        </div>
+
+        {verifyResult && (
+          <div className="mt-4 text-sm bg-white/15 p-3 rounded-lg">
+            测试结果：总计 {verifyResult.totalCount}，通过 {verifyResult.successCount}，失败 {verifyResult.failCount}，平均分 {verifyResult.avgScore}
+            {verifyResult.simulated ? '（当前为质量模拟评分）' : '（当前为余弦相似度评分）'}
+          </div>
         )}
+
+        {modelStatus && (
+          <div className="mt-3 text-sm bg-white/15 p-3 rounded-lg">
+            模型状态：{modelStatus.available ? '可用' : '不可用'} | 路径 {modelStatus.modelPath} | HTTP {modelStatus.status}
+            {modelStatus.source ? ` | 来源 ${modelStatus.source}` : ''}
+          </div>
+        )}
+
+        {error && <div className="bg-red-800/50 p-3 rounded-lg text-sm mt-4">{error}</div>}
       </motion.div>
 
-      {/* Risk Students */}
       <AnimatePresence>
-        {atRiskStudents.length > 0 && (
+        {riskStudents.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -212,10 +275,10 @@ const AiInsightsPage: React.FC = () => {
           >
             <h2 className="text-xl font-semibold text-slate-800 mb-4 flex items-center gap-2">
               <AlertTriangle className="text-red-500" />
-              高风险学生 ({atRiskStudents.length})
+              风险样本 ({riskStudents.length})
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {atRiskStudents.slice(0, 3).map(student => (
+              {riskStudents.slice(0, 3).map(student => (
                 <motion.div
                   key={student.studentId}
                   initial={{ opacity: 0, y: 10 }}
@@ -228,8 +291,8 @@ const AiInsightsPage: React.FC = () => {
                     <span className="font-semibold text-red-900">{student.studentName}</span>
                     <AlertTriangle className="w-4 h-4 text-red-400" />
                   </div>
-                  <div className="text-sm text-slate-600 mt-2">缺勤 {student.absentCount} 次</div>
-                  <div className="text-sm text-slate-600">迟到 {student.lateCount} 次</div>
+                  <div className="text-sm text-slate-600 mt-2">模板数 {student.templateCount}</div>
+                  <div className="text-sm text-slate-600">质量 {Number(student.latestQuality || 0).toFixed(3)}</div>
                 </motion.div>
               ))}
             </div>
@@ -237,17 +300,16 @@ const AiInsightsPage: React.FC = () => {
         )}
       </AnimatePresence>
 
-      {/* Table */}
       <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-slate-800">全体学生考勤分析</h2>
+        <h2 className="text-xl font-semibold text-slate-800">人脸特征向量总览</h2>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg">
             <button onClick={() => setViewMode('student')} className={`px-3 py-1 rounded-md text-sm font-medium ${viewMode === 'student' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
-              <Users size={16} className="inline mr-1"/>
+              <Users size={16} className="inline mr-1" />
               学生视图
             </button>
             <button onClick={() => setViewMode('class')} className={`px-3 py-1 rounded-md text-sm font-medium ${viewMode === 'class' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
-              <List size={16} className="inline mr-1"/>
+              <List size={16} className="inline mr-1" />
               班级视图
             </button>
           </div>
@@ -258,47 +320,40 @@ const AiInsightsPage: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-
         {loading ? (
           <div className="flex h-60 items-center justify-center text-slate-500">
             <Loader2 className="w-6 h-6 animate-spin mr-2" />
             正在加载数据...
           </div>
-        ) : error ? (
-          <div className="flex h-60 items-center justify-center text-red-500">
-            <AlertTriangle className="w-6 h-6 mr-2" />
-            {error}
-          </div>
+        ) : viewMode === 'student' ? (
+          <StudentDetailView analysis={sortedTemplates} requestSort={requestSort} />
         ) : (
-          viewMode === 'student' ? (
-            <StudentDetailView analysis={sortedAnalysis} />
-          ) : (
-            <ClassSummaryView analysis={analysis} />
-          )
+          <ClassSummaryView analysis={classSummary} />
         )}
       </div>
 
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
-
     </motion.div>
-  )
-}
+  );
+};
 
 export default AiInsightsPage;
 
-// View Components
-const StudentDetailView: React.FC<{ analysis: StudentAttendanceAnalysis[] }> = ({ analysis }) => (
+const StudentDetailView: React.FC<{
+  analysis: FaceTemplateSummaryItem[];
+  requestSort: (key: SortKey) => void;
+}> = ({ analysis, requestSort }) => (
   <div className="overflow-x-auto max-h-[500px]">
     <table className="w-full text-left text-sm">
-      {/* ... [The existing table head] ... */}
       <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10">
         <tr>
-          <th className="px-6 py-4 font-semibold">学生</th>
-          <th className="px-6 py-4 font-semibold">总次数</th>
-          <th className="px-6 py-4 font-semibold">出勤</th>
-          <th className="px-6 py-4 font-semibold">迟到</th>
-          <th className="px-6 py-4 font-semibold">缺勤</th>
-          <th className="px-6 py-4 font-semibold">出勤率</th>
+          <th className="px-6 py-4 font-semibold cursor-pointer" onClick={() => requestSort('studentName')}>学生</th>
+          <th className="px-6 py-4 font-semibold">学号</th>
+          <th className="px-6 py-4 font-semibold">班级</th>
+          <th className="px-6 py-4 font-semibold cursor-pointer" onClick={() => requestSort('templateCount')}>模板数</th>
+          <th className="px-6 py-4 font-semibold cursor-pointer" onClick={() => requestSort('latestQuality')}>最新质量</th>
+          <th className="px-6 py-4 font-semibold">模型版本</th>
+          <th className="px-6 py-4 font-semibold">最近更新时间</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
@@ -306,11 +361,12 @@ const StudentDetailView: React.FC<{ analysis: StudentAttendanceAnalysis[] }> = (
           {analysis.map(student => (
             <motion.tr key={student.studentId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               <td className="px-6 py-4">{student.studentName}</td>
-              <td className="px-6 py-4 text-center">{student.totalSessions}</td>
-              <td className="px-6 py-4 text-center text-green-600">{student.presentCount}</td>
-              <td className="px-6 py-4 text-center text-amber-600">{student.lateCount}</td>
-              <td className="px-6 py-4 text-center text-red-600">{student.absentCount}</td>
-              <td className="px-6 py-4">{student.totalSessions > 0 ? ((student.presentCount / student.totalSessions) * 100).toFixed(0) : '0'}%</td>
+              <td className="px-6 py-4">{student.studentSid}</td>
+              <td className="px-6 py-4">{student.className}</td>
+              <td className="px-6 py-4 text-center">{student.templateCount}</td>
+              <td className="px-6 py-4">{Number(student.latestQuality || 0).toFixed(3)}</td>
+              <td className="px-6 py-4">{student.modelVer || '-'}</td>
+              <td className="px-6 py-4">{student.lastUpdatedAt || '-'}</td>
             </motion.tr>
           ))}
         </AnimatePresence>
@@ -319,89 +375,66 @@ const StudentDetailView: React.FC<{ analysis: StudentAttendanceAnalysis[] }> = (
   </div>
 );
 
-const ClassSummaryView: React.FC<{ analysis: StudentAttendanceAnalysis[] }> = ({ analysis }) => {
-  const byClass = useMemo(() => {
-    const grouped: { [key: string]: StudentAttendanceAnalysis[] } = {};
-    analysis.forEach(s => {
-      if (!grouped[s.className]) grouped[s.className] = [];
-      grouped[s.className].push(s);
-    });
-    return Object.entries(grouped).map(([className, students]) => ({
-      className,
-      studentCount: students.length,
-      avgAttendance: students.length > 0
-        ? students.reduce((acc, s) => acc + (s.totalSessions > 0 ? (s.presentCount / s.totalSessions) : 0), 0) / students.length * 100
-        : 0,
-      totalAbsences: students.reduce((acc, s) => acc + s.absentCount, 0),
-      students
-    }));
-  }, [analysis]);
+const ClassSummaryView: React.FC<{
+  analysis: Array<{
+    className: string;
+    studentCount: number;
+    withTemplateCount: number;
+    lowQualityCount: number;
+    avgQuality: number;
+  }>;
+}> = ({ analysis }) => (
+  <div className="overflow-x-auto">
+    <table className="w-full text-left text-sm">
+      <thead className="bg-slate-50 text-slate-500">
+        <tr>
+          <th className="px-6 py-4 font-semibold">班级</th>
+          <th className="px-6 py-4 font-semibold">总人数</th>
+          <th className="px-6 py-4 font-semibold">已建模</th>
+          <th className="px-6 py-4 font-semibold">低质量模板</th>
+          <th className="px-6 py-4 font-semibold">平均质量</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        <AnimatePresence>
+          {analysis.map(row => (
+            <motion.tr key={row.className} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <td className="px-6 py-4 font-medium text-blue-700">{row.className}</td>
+              <td className="px-6 py-4">{row.studentCount}</td>
+              <td className="px-6 py-4">{row.withTemplateCount}</td>
+              <td className="px-6 py-4 text-red-600">{row.lowQualityCount}</td>
+              <td className="px-6 py-4">{row.avgQuality.toFixed(3)}</td>
+            </motion.tr>
+          ))}
+        </AnimatePresence>
+      </tbody>
+    </table>
+  </div>
+);
 
-  const [expandedClass, setExpandedClass] = useState<string | null>(null);
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="bg-slate-50 text-slate-500">
-          <tr>
-            <th className="px-6 py-4 font-semibold">班级</th>
-            <th className="px-6 py-4 font-semibold">学生数</th>
-            <th className="px-6 py-4 font-semibold">平均出勤率</th>
-            <th className="px-6 py-4 font-semibold">总缺勤</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          <AnimatePresence>
-            {byClass.map(c => (
-              <React.Fragment key={c.className}>
-                <motion.tr layout onClick={() => setExpandedClass(expandedClass === c.className ? null : c.className)} className="cursor-pointer hover:bg-slate-50">
-                  <td className="px-6 py-4 font-medium text-blue-700">{c.className}</td>
-                  <td className="px-6 py-4">{c.studentCount}</td>
-                  <td className="px-6 py-4">{c.avgAttendance.toFixed(1)}%</td>
-                  <td className="px-6 py-4 text-red-600">{c.totalAbsences}</td>
-                </motion.tr>
-                {expandedClass === c.className && (
-                  <motion.tr>
-                    <td colSpan={4} className="p-0 bg-slate-50">
-                      <div className="p-4">
-                        <StudentDetailView analysis={c.students} />
-                      </div>
-                    </td>
-                  </motion.tr>
-                )}
-              </React.Fragment>
-            ))}
-          </AnimatePresence>
-        </tbody>
-      </table>
-    </div>
-  );
-};
-
-const HelpModal: React.FC<{ isOpen: boolean; onClose: () => void; }> = ({ isOpen, onClose }) => (
-  <Modal open={isOpen} onClose={onClose} title="AI Insights - Common Issues">
+const HelpModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => (
+  <Modal open={isOpen} onClose={onClose} title="人脸向量中心 - 常见问题">
     <div className="space-y-4 text-sm text-slate-600">
       <div>
-        <h4 className="font-semibold text-slate-800 mb-1">1. Blank Screen or Endless Loading</h4>
+        <h4 className="font-semibold text-slate-800 mb-1">1. 批量提取后模板数仍是 0</h4>
         <ul className="list-disc list-inside space-y-1">
-          <li>Check browser console (F12) for any red error messages.</li>
-          <li>Ensure your `API_BASE_URL` in `services/dataService.ts` is correct and reachable.</li>
-          <li>Verify authentication is working; try logging out and back in.</li>
+          <li>先确认所选班级下有学生数据。</li>
+          <li>检查后端 `/api/face/jobs/enroll-batch` 是否返回成功。</li>
+          <li>点击按钮后等待刷新完成再查看列表。</li>
         </ul>
       </div>
       <div>
-        <h4 className="font-semibold text-slate-800 mb-1">2. Insight Generation Fails (500 Error)</h4>
+        <h4 className="font-semibold text-slate-800 mb-1">2. 批量测试失败率高</h4>
         <ul className="list-disc list-inside space-y-1">
-          <li>This can be a temporary server-side issue. Please try again in a few moments.</li>
-          <li>Ensure your backend service is running and connected to the database correctly.</li>
+          <li>先检查模板质量分布，建议质量低于 0.75 的先重提取。</li>
+          <li>适当降低阈值（例如从 0.8 调到 0.75）观察变化。</li>
         </ul>
       </div>
       <div>
-        <h4 className="font-semibold text-slate-800 mb-1">3. Gemini API or Network Errors</h4>
+        <h4 className="font-semibold text-slate-800 mb-1">3. 这页与签到任务关系</h4>
         <ul className="list-disc list-inside space-y-1">
-          <li>This indicates a problem connecting to the Google Gemini API.</li>
-          <li>Check your internet connection.</li>
-          <li>Verify that the Gemini API key and configuration on your backend are correct.</li>
+          <li>签到发布仍走 `CheckinTask`，并通过 `faceRequired/faceMinScore` 控制人脸校验。</li>
+          <li>本页只负责模板管理与模型测试，不改变签到发布入口。</li>
         </ul>
       </div>
     </div>
