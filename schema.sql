@@ -166,6 +166,23 @@ CREATE TABLE SyncLog (
     status   TEXT NOT NULL CHECK(status IN ('PENDING', 'SYNCED', 'FAILED', 'CONFLICT'))
 );
 
+-- 11. FaceInferenceService
+CREATE TABLE FaceInferenceService (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    name      TEXT NOT NULL DEFAULT 'huggingface-mobilefacenet',
+    baseUrl   TEXT NOT NULL,
+    apiToken  TEXT,
+    timeoutMs INTEGER NOT NULL DEFAULT 15000,
+    modelVer  TEXT NOT NULL DEFAULT 'mobilefacenet.onnx',
+    isActive  INTEGER NOT NULL DEFAULT 1 CHECK(isActive IN (0, 1)),
+    createdAt TEXT DEFAULT (CURRENT_TIMESTAMP),
+    updatedAt TEXT DEFAULT (CURRENT_TIMESTAMP)
+);
+
+-- 11.1 默认人脸特征中心配置（部署后请改为你的 Space 地址）
+INSERT INTO FaceInferenceService (name, baseUrl, modelVer, isActive)
+VALUES ('huggingface-mobilefacenet', 'https://your-username-mobilefacenet-server.hf.space', 'mobilefacenet.onnx', 1);
+
 -- ==================== 索引 ====================
 CREATE INDEX idx_classroom_teacher          ON Classroom(teacherId);
 CREATE INDEX idx_student_class              ON Student(classId);
@@ -183,6 +200,7 @@ CREATE INDEX idx_checkin_submission_student ON CheckinSubmission(studentId);
 CREATE INDEX idx_checkin_submission_latest  ON CheckinSubmission(isLatest);
 CREATE INDEX idx_checkin_submission_final   ON CheckinSubmission(finalResult);
 CREATE INDEX idx_sync_entity                ON SyncLog(entity, entityId);
+CREATE INDEX idx_face_infer_active          ON FaceInferenceService(isActive);
 
 -- ==================== 触发器 ====================
 DROP TRIGGER IF EXISTS update_teacher_timestamp;
@@ -217,5 +235,12 @@ BEGIN
       AND id       != NEW.id;
 END;
 
+DROP TRIGGER IF EXISTS trig_face_infer_service_updated;
+CREATE TRIGGER trig_face_infer_service_updated
+AFTER UPDATE ON FaceInferenceService
+BEGIN
+    UPDATE FaceInferenceService SET updatedAt = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
 -- 执行完成提示
-SELECT '✅ 数据库结构创建完成！共 10 张表 + 16 个索引 + 4 个触发器' AS result;
+SELECT '✅ 数据库结构创建完成！共 11 张表 + 17 个索引 + 5 个触发器' AS result;

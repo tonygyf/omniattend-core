@@ -3,8 +3,6 @@
  */
 import { createCheckinTask, getCheckinTasks, getCheckinTaskDetails, getReviewQueue, reviewSubmission, submitCheckin, closeCheckinTask } from './services/checkinService';
 import { createFaceEmbedding, getFaceEmbeddingsByStudent } from './services/face/faceEmbeddingService';
-import * as ort from 'onnxruntime-node';
-import sharp from 'sharp';
 
 export interface Env {
   DB: D1Database;
@@ -13,6 +11,9 @@ export interface Env {
   ASSETS: Fetcher;
   R2: R2Bucket;
   apikey?: string;
+  FACE_INFER_BASE_URL?: string;
+  FACE_INFER_API_KEY?: string;
+  R2_PUBLIC_BASE_URL?: string;
 }
 
 // Helper: Simple SHA-256 hash for passwords
@@ -96,109 +97,202 @@ function toNumberArray(input: any): number[] {
 
 function cosineSimilarity(a: number[], b: number[]): number {
   if (!a.length || !b.length || a.length !== b.length) return 0;
+  let normA = 0;
+  let normB = 0;
   let dot = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
   }
-  // MobileFaceNet 输出为 L2 归一化向量，点积即余弦相似度。
-  return dot;
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  if (!Number.isFinite(denom) || denom <= 1e-12) return 0;
+  return dot / denom;
 }
+
+type FaceInferenceConfig = {
+  baseUrl: string;
+  apiKey: string;
+  timeoutMs: number;
+  modelVer: string;
+  source: "DB" | "ENV";
+};
 
 function normalizeObjectKey(rawPath: string): string {
   return (rawPath || "").replace(/^\/+/, "").trim();
 }
 
-function normalizeAvatarUriToKey(avatarUri: string): string {
-  const cleaned = normalizeObjectKey(avatarUri);
-  if (!cleaned) return "";
-  if (cleaned.startsWith("avatars/")) return cleaned;
-  return `avatars/students/${cleaned}`;
-}
-
-async function readAvatarBytes(env: Env, request: Request, avatarUri: string): Promise<Uint8Array | null> {
-  const normalizedKey = normalizeAvatarUriToKey(avatarUri);
-  if (normalizedKey) {
-    try {
-      const obj = await env.R2.get(normalizedKey);
-      if (obj) {
-        const arr = await obj.arrayBuffer();
-        const bytes = new Uint8Array(arr);
-        if (bytes.length > 0) return bytes;
-      }
-    } catch (e) {
-      console.warn("R2 avatar read failed:", normalizedKey, e);
-    }
-  }
-
+function toPublicImageUrl(env: Env, request: Request, avatarUri: string): string {
   const raw = (avatarUri || "").trim();
-  if (!raw) return null;
-  const candidateUrls: string[] = [];
-  if (/^https?:\/\//i.test(raw)) {
-    candidateUrls.push(raw);
-  } else {
-    candidateUrls.push(new URL(raw.replace(/^\/+/, ""), request.url).toString());
-  }
-  if (normalizedKey) {
-    candidateUrls.push(new URL(normalizedKey, request.url).toString());
-  }
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
 
-  for (const u of candidateUrls) {
-    try {
-      const resp = await fetch(u, { method: "GET" });
-      if (!resp.ok) continue;
-      const arr = await resp.arrayBuffer();
-      const bytes = new Uint8Array(arr);
-      if (bytes.length > 0) return bytes;
-    } catch (e) {
-      console.warn("HTTP avatar read failed:", u, e);
+  const clean = normalizeObjectKey(raw);
+  if (!clean) return "";
+  const cdnBase = (env.R2_PUBLIC_BASE_URL || "https://files.gyf123.dpdns.org/").replace(/\/+$/, "");
+  return `${cdnBase}/${clean}`;
+}
+
+async function getFaceInferenceConfig(env: Env): Promise<FaceInferenceConfig> {
+  try {
+    const row = await env.DB.prepare(
+      `SELECT baseUrl, apiToken, timeoutMs, modelVer
+       FROM FaceInferenceService
+       WHERE isActive = 1
+       ORDER BY id DESC
+       LIMIT 1`
+    ).first<any>();
+
+    if (row?.baseUrl) {
+      return {
+        baseUrl: String(row.baseUrl).replace(/\/+$/, ""),
+        apiKey: (row.apiToken || "").toString().trim(),
+        timeoutMs: Math.max(Number(row.timeoutMs || 15000), 1000),
+        modelVer: (row.modelVer || "mobilefacenet.onnx").toString(),
+        source: "DB"
+      };
     }
+  } catch (e) {
+    console.warn("Read FaceInferenceService config failed, fallback to env:", e);
   }
 
-  return null;
+  const envBaseUrl = (env.FACE_INFER_BASE_URL || "").toString().trim();
+  if (!envBaseUrl) {
+    throw new Error("FACE_INFERENCE_CONFIG_MISSING");
+  }
+
+  return {
+    baseUrl: envBaseUrl.replace(/\/+$/, ""),
+    apiKey: (env.FACE_INFER_API_KEY || "").toString().trim(),
+    timeoutMs: 15000,
+    modelVer: "mobilefacenet.onnx",
+    source: "ENV"
+  };
 }
 
-// 单例 session，避免重复加载 ONNX 模型
-let _session: ort.InferenceSession | null = null;
-async function getOrtSession(): Promise<ort.InferenceSession> {
-  if (!_session) {
-    _session = await ort.InferenceSession.create(
-      './public/models/mobilefacenet.onnx',
-      { executionProviders: ['cpu'] }
-    );
+async function extractEmbeddingByExternalService(env: Env, request: Request, avatarUri: string): Promise<{ embedding: number[]; modelVer: string; source: "DB" | "ENV" }> {
+  const imageUrl = toPublicImageUrl(env, request, avatarUri);
+  if (!imageUrl) {
+    throw new Error("AVATAR_URL_INVALID");
   }
-  return _session;
+
+  const cfg = await getFaceInferenceConfig(env);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+  if (cfg.apiKey) {
+    headers["X-API-Key"] = cfg.apiKey;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("INFERENCE_TIMEOUT"), cfg.timeoutMs);
+  const resp = await fetch(`${cfg.baseUrl}/embed/url`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ image_url: imageUrl }),
+    signal: controller.signal
+  }).finally(() => clearTimeout(timer));
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`INFERENCE_HTTP_${resp.status}:${text.slice(0, 200)}`);
+  }
+  const payload = await resp.json<any>();
+  const embedding = toNumberArray(payload?.embedding);
+  if (embedding.length !== 128) {
+    throw new Error("INFERENCE_VECTOR_INVALID");
+  }
+
+  return {
+    embedding,
+    modelVer: (payload?.modelVer || cfg.modelVer || "mobilefacenet.onnx").toString(),
+    source: cfg.source
+  };
 }
 
-async function extractEmbedding(imageBuffer: Buffer): Promise<number[]> {
-  const { data } = await sharp(imageBuffer)
-    .resize(112, 112)
-    .removeAlpha()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
-  const float32 = new Float32Array(112 * 112 * 3);
-  for (let i = 0; i < data.length; i++) {
-    float32[i] = (data[i] / 127.5) - 1.0;
+function chunkArray<T>(input: T[], size: number): T[][] {
+  if (size <= 0) return [input];
+  const out: T[][] = [];
+  for (let i = 0; i < input.length; i += size) {
+    out.push(input.slice(i, i + size));
   }
-
-  const sess = await getOrtSession();
-  const tensor = new ort.Tensor('float32', float32, [1, 112, 112, 3]);
-  const results = await sess.run({ 'img_inputs:0': tensor });
-  return Array.from(results['embeddings:0'].data as Float32Array);
+  return out;
 }
 
-async function fetchImageAsBuffer(url: string): Promise<Buffer> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`fetch image failed: ${res.status}`);
+async function extractEmbeddingsBatchByExternalService(
+  env: Env,
+  request: Request,
+  students: Array<{ studentId: number; avatarUri: string }>
+): Promise<{
+  modelVer: string;
+  source: "DB" | "ENV";
+  successMap: Map<number, number[]>;
+  errorMap: Map<number, string>;
+}> {
+  const cfg = await getFaceInferenceConfig(env);
+  const successMap = new Map<number, number[]>();
+  const errorMap = new Map<number, string>();
+
+  const payloadItems: Array<{ id: string; image_url: string }> = [];
+  for (const s of students) {
+    const imageUrl = toPublicImageUrl(env, request, s.avatarUri);
+    if (!imageUrl) {
+      errorMap.set(s.studentId, "AVATAR_URL_INVALID");
+      continue;
+    }
+    payloadItems.push({ id: String(s.studentId), image_url: imageUrl });
   }
-  const arrayBuffer = await res.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  if (!payloadItems.length) {
+    return {
+      modelVer: cfg.modelVer || "mobilefacenet.onnx",
+      source: cfg.source,
+      successMap,
+      errorMap
+    };
+  }
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (cfg.apiKey) headers["X-API-Key"] = cfg.apiKey;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("INFERENCE_TIMEOUT"), cfg.timeoutMs);
+  const resp = await fetch(`${cfg.baseUrl}/embed/url/batch`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ items: payloadItems }),
+    signal: controller.signal
+  }).finally(() => clearTimeout(timer));
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`INFERENCE_BATCH_HTTP_${resp.status}:${text.slice(0, 200)}`);
+  }
+  const payload = await resp.json<any>();
+  const list = Array.isArray(payload?.results) ? payload.results : [];
+  for (const row of list) {
+    const sid = Number(row?.id || 0);
+    if (!sid) continue;
+    const ok = Boolean(row?.ok);
+    if (!ok) {
+      errorMap.set(sid, (row?.error || "INFERENCE_FAILED").toString());
+      continue;
+    }
+    const embedding = toNumberArray(row?.embedding);
+    if (embedding.length !== 128) {
+      errorMap.set(sid, "INFERENCE_VECTOR_INVALID");
+      continue;
+    }
+    successMap.set(sid, embedding);
+  }
+
+  return {
+    modelVer: (payload?.modelVer || cfg.modelVer || "mobilefacenet.onnx").toString(),
+    source: cfg.source,
+    successMap,
+    errorMap
+  };
 }
 
 function estimateImageQuality(embedding: number[]): number {
   if (!embedding.length) return 0;
-  // ONNX 输出向量已归一化，固定回写 1.0 代表推理成功，便于筛选真模板。
+  // 外部推理服务成功返回 128 维向量即视为有效模板。
   return 1;
 }
 
@@ -1290,59 +1384,51 @@ export default {
           }
         }
 
-        // GET /api/face/model/status - 检测模型静态文件是否可访问
+        // GET /api/face/model/status - 检测外部推理服务是否可访问
         if (path === "/api/face/model/status" && method === "GET") {
-          const modelPath = "/models/mobilefacenet.onnx";
-          const modelKey = "models/mobilefacenet.onnx";
-          const modelUrl = new URL(modelPath, request.url).toString();
-          const errors: string[] = [];
-
           try {
-            const assetResp = await env.ASSETS.fetch(new Request(modelUrl, { method: "GET" }));
-            if (assetResp.ok) {
+            const cfg = await getFaceInferenceConfig(env);
+            const healthResp = await fetch(`${cfg.baseUrl}/health`, { method: "GET" });
+            const healthText = await healthResp.text();
+            if (!healthResp.ok) {
               return Response.json({
                 ok: true,
                 data: {
-                  modelPath,
-                  available: true,
-                  status: assetResp.status,
-                  source: "ASSETS"
+                  modelPath: cfg.modelVer,
+                  available: false,
+                  status: healthResp.status,
+                  source: "FACE_INFERENCE_SERVICE",
+                  endpoint: cfg.baseUrl,
+                  configSource: cfg.source,
+                  message: healthText.slice(0, 300)
                 }
               }, { headers: corsHeaders });
             }
-            errors.push(`ASSETS:${assetResp.status}`);
-          } catch (e: any) {
-            errors.push(`ASSETS_ERR:${e?.message || "unknown"}`);
-          }
 
-          try {
-            const obj = await env.R2.head(modelKey);
-            if (obj) {
-              return Response.json({
-                ok: true,
-                data: {
-                  modelPath,
-                  available: true,
-                  status: 200,
-                  source: "R2"
-                }
-              }, { headers: corsHeaders });
-            }
-            errors.push("R2:404");
+            return Response.json({
+              ok: true,
+              data: {
+                modelPath: cfg.modelVer,
+                available: true,
+                status: healthResp.status,
+                source: "FACE_INFERENCE_SERVICE",
+                endpoint: cfg.baseUrl,
+                configSource: cfg.source,
+                message: healthText.slice(0, 300)
+              }
+            }, { headers: corsHeaders });
           } catch (e: any) {
-            errors.push(`R2_ERR:${e?.message || "unknown"}`);
+            return Response.json({
+              ok: true,
+              data: {
+                modelPath: "mobilefacenet.onnx",
+                available: false,
+                status: 500,
+                source: "FACE_INFERENCE_SERVICE",
+                message: e?.message || "health check failed"
+              }
+            }, { headers: corsHeaders });
           }
-
-          return Response.json({
-            ok: true,
-            data: {
-              modelPath,
-              available: false,
-              status: 404,
-              source: "NONE",
-              message: errors.join("; ")
-            }
-          }, { headers: corsHeaders });
         }
 
         // POST /api/face/jobs/enroll-batch - 批量注册（仅接收真实向量样本）
@@ -1350,7 +1436,7 @@ export default {
           try {
             const body = await request.json() as any;
             const classId = Number(body.classId || 0);
-            const modelVer = (body.modelVer || "mobilefacenet.onnx").toString();
+            const requestedModelVer = (body.modelVer || "").toString().trim();
             const maxStudents = Math.min(Number(body.maxStudents || 50), 200);
             const studentIdsRaw = Array.isArray(body.studentIds) ? body.studentIds : [];
             const studentIds = studentIdsRaw.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v) && v > 0);
@@ -1387,6 +1473,36 @@ export default {
             let successCount = 0;
             const failures: any[] = [];
             const enrolled: any[] = [];
+            const inferredVectorMap = new Map<number, { vector: number[]; modelVer: string }>();
+            const inferErrorMap = new Map<number, string>();
+
+            const inferCandidates = students
+              .filter((s) => !sampleMap.has(Number(s.id)))
+              .map((s) => ({ studentId: Number(s.id), avatarUri: (s.avatarUri || "").toString().trim() }));
+            const inferCandidatesWithAvatar = inferCandidates.filter((it) => it.avatarUri.length > 0);
+            const inferCandidatesNoAvatar = inferCandidates.filter((it) => !it.avatarUri);
+            for (const it of inferCandidatesNoAvatar) {
+              inferErrorMap.set(it.studentId, "AVATAR_NOT_SET");
+            }
+
+            const chunks = chunkArray(inferCandidatesWithAvatar, 24);
+            for (const chunk of chunks) {
+              try {
+                const batchRes = await extractEmbeddingsBatchByExternalService(env, request, chunk);
+                for (const [sid, vector] of batchRes.successMap.entries()) {
+                  inferredVectorMap.set(sid, { vector, modelVer: batchRes.modelVer });
+                }
+                for (const [sid, reason] of batchRes.errorMap.entries()) {
+                  if (!inferErrorMap.has(sid)) inferErrorMap.set(sid, reason);
+                }
+              } catch (e: any) {
+                for (const c of chunk) {
+                  if (!inferErrorMap.has(c.studentId)) {
+                    inferErrorMap.set(c.studentId, e?.message || "INFERENCE_BATCH_FAILED");
+                  }
+                }
+              }
+            }
 
             for (const student of students) {
               try {
@@ -1395,40 +1511,23 @@ export default {
                 let quality = 0;
                 let faceImageUri: string | null = null;
 
+                let modelVer = requestedModelVer || "mobilefacenet.onnx";
                 if (provided && provided.vector.length) {
                   vector = provided.vector;
                   quality = provided.quality ?? 0.9;
                 } else {
-                  const avatarUri = (student.avatarUri || "").toString().trim();
-                  if (!avatarUri) {
+                  const inferred = inferredVectorMap.get(Number(student.id));
+                  if (!inferred) {
                     failures.push({
                       studentId: student.id,
-                      reason: "AVATAR_NOT_SET"
+                      reason: inferErrorMap.get(Number(student.id)) || "INFERENCE_NOT_READY"
                     });
                     continue;
                   }
-                  const avatarUrl = /^https?:\/\//i.test(avatarUri)
-                    ? avatarUri
-                    : new URL(avatarUri.replace(/^\/+/, ""), request.url).toString();
-                  let imageBuffer: Buffer | null = null;
-                  try {
-                    imageBuffer = await fetchImageAsBuffer(avatarUrl);
-                  } catch {
-                    const avatarBytes = await readAvatarBytes(env, request, avatarUri);
-                    if (avatarBytes && avatarBytes.length >= 512) {
-                      imageBuffer = Buffer.from(avatarBytes);
-                    }
-                  }
-                  if (!imageBuffer) {
-                    failures.push({
-                      studentId: student.id,
-                      reason: "AVATAR_READ_FAILED"
-                    });
-                    continue;
-                  }
-                  vector = await extractEmbedding(imageBuffer);
+                  vector = inferred.vector;
+                  modelVer = inferred.modelVer || modelVer;
                   quality = estimateImageQuality(vector);
-                  faceImageUri = avatarUri;
+                  faceImageUri = (student.avatarUri || "").toString().trim() || null;
                 }
 
                 const insertRes = await env.DB.prepare(
@@ -1457,7 +1556,7 @@ export default {
                 totalCount: students.length,
                 successCount,
                 failCount: failures.length,
-                modelVer,
+                modelVer: requestedModelVer || "mobilefacenet.onnx",
                 classId: classId || null,
                 enrolled: enrolled.slice(0, 30),
                 failures: failures.slice(0, 30)
