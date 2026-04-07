@@ -56,6 +56,25 @@ function normalizeRecordKey(rawKey: string, studentId?: number, taskId?: number)
   return `records/${tid}/${sid}/${Date.now()}_${crypto.randomUUID()}.jpg`;
 }
 
+function slugifyName(raw: string | null | undefined): string {
+  const base = (raw || "").trim().toLowerCase();
+  if (!base) return "user";
+  const slug = base
+    .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  if (!slug) return "user";
+  return slug.slice(0, 32);
+}
+
+function normalizeAvatarKey(rawKey: string, roleDir: "teachers" | "students", userId: number, displayName?: string): string {
+  const cleaned = (rawKey || "").replace(/^\/+/, "").trim();
+  if (cleaned.startsWith("avatars/")) return cleaned;
+  if (cleaned.length > 0) return `avatars/${roleDir}/${cleaned}`;
+  const slug = slugifyName(displayName);
+  return `avatars/${roleDir}/${userId}_${slug}_${Date.now()}.png`;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -413,8 +432,8 @@ export default {
               key = (body.key || "").toString().trim();
               ct = (body.contentType || "image/jpeg").toString();
               const dataBase64 = (body.dataBase64 || "").toString();
-              if (!teacherId || !key || !dataBase64) {
-                return Response.json({ error: "teacherId, key, dataBase64 required" }, { status: 400, headers: corsHeaders });
+              if (!teacherId || !dataBase64) {
+                return Response.json({ error: "teacherId and dataBase64 required" }, { status: 400, headers: corsHeaders });
               }
               bin = Uint8Array.from(atob(dataBase64), c => c.charCodeAt(0));
             } else if (contentType.includes("multipart/form-data")) {
@@ -422,8 +441,8 @@ export default {
               teacherId = Number(form.get("teacherId") as string) || null;
               const file = form.get("file") as File | null;
               key = (form.get("key") as string || "").trim();
-              if (!teacherId || !file || !key) {
-                return Response.json({ error: "teacherId, file, key required" }, { status: 400, headers: corsHeaders });
+              if (!teacherId || !file) {
+                return Response.json({ error: "teacherId and file required" }, { status: 400, headers: corsHeaders });
               }
               ct = file.type || "image/jpeg";
               
@@ -437,9 +456,15 @@ export default {
             } else {
               return Response.json({ error: "Unsupported Content-Type" }, { status: 415, headers: corsHeaders });
             }
-            
-            // 并行处理：同时上传R2和更新数据库
-            const cleanKey = key!.replace(/^\/+/, "");
+
+            const teacher = await env.DB.prepare("SELECT id, name, avatarUri FROM Teacher WHERE id = ?")
+              .bind(teacherId!)
+              .first<any>();
+            if (!teacher) {
+              return Response.json({ error: "Teacher not found" }, { status: 404, headers: corsHeaders });
+            }
+
+            const cleanKey = normalizeAvatarKey(key || teacher.avatarUri || "", "teachers", teacherId!, teacher.name);
             
             const [r2Result, dbResult] = await Promise.allSettled([
               // 上传到R2
@@ -474,6 +499,82 @@ export default {
             }, { headers: corsHeaders });
           } catch (e: any) {
             return Response.json({ error: "Profile avatar update failed" }, { status: 500, headers: corsHeaders });
+          }
+        }
+
+        // 3.1 POST /api/student/profile/avatar - 上传头像并更新学生avatarUri
+        if (path === "/api/student/profile/avatar" && method === "POST") {
+          try {
+            const contentType = request.headers.get("content-type") || "";
+            let studentId: number | null = null;
+            let key: string | null = null;
+            let ct: string = "application/octet-stream";
+            let bin: Uint8Array | null = null;
+
+            if (contentType.includes("application/json")) {
+              const body = await request.json() as any;
+              studentId = Number(body.studentId) || null;
+              key = (body.key || "").toString().trim();
+              ct = (body.contentType || "image/jpeg").toString();
+              const dataBase64 = (body.dataBase64 || "").toString();
+              if (!studentId || !dataBase64) {
+                return Response.json({ error: "studentId and dataBase64 required" }, { status: 400, headers: corsHeaders });
+              }
+              bin = Uint8Array.from(atob(dataBase64), c => c.charCodeAt(0));
+            } else if (contentType.includes("multipart/form-data")) {
+              const form = await request.formData();
+              studentId = Number(form.get("studentId") as string) || null;
+              const file = form.get("file") as File | null;
+              key = (form.get("key") as string || "").trim();
+              if (!studentId || !file) {
+                return Response.json({ error: "studentId and file required" }, { status: 400, headers: corsHeaders });
+              }
+              ct = file.type || "image/jpeg";
+              if (file.size > 5 * 1024 * 1024) {
+                return Response.json({ error: "文件大小不能超过5MB" }, { status: 413, headers: corsHeaders });
+              }
+              const arr = await file.arrayBuffer();
+              bin = new Uint8Array(arr);
+            } else {
+              return Response.json({ error: "Unsupported Content-Type" }, { status: 415, headers: corsHeaders });
+            }
+
+            const student = await env.DB.prepare("SELECT id, name, avatarUri FROM Student WHERE id = ?")
+              .bind(studentId!)
+              .first<any>();
+            if (!student) {
+              return Response.json({ error: "Student not found" }, { status: 404, headers: corsHeaders });
+            }
+
+            const cleanKey = normalizeAvatarKey(key || student.avatarUri || "", "students", studentId!, student.name);
+
+            const [r2Result, dbResult] = await Promise.allSettled([
+              env.R2.put(cleanKey, bin!, { httpMetadata: { contentType: ct } }),
+              env.DB.prepare("UPDATE Student SET avatarUri = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?")
+                .bind(cleanKey, studentId!)
+                .run()
+            ]);
+
+            if (r2Result.status === 'rejected') {
+              console.error('R2 upload failed (student):', r2Result.reason);
+              return Response.json({ error: "头像存储失败" }, { status: 500, headers: corsHeaders });
+            }
+
+            if (dbResult.status === 'rejected') {
+              console.error('Database update failed (student):', dbResult.reason);
+              env.R2.delete(cleanKey).catch(err => console.error('Failed to cleanup student R2:', err));
+              return Response.json({ error: "数据库更新失败" }, { status: 500, headers: corsHeaders });
+            }
+
+            return Response.json({
+              success: true,
+              data: {
+                id: studentId,
+                avatarUri: cleanKey
+              }
+            }, { headers: corsHeaders });
+          } catch (_e: any) {
+            return Response.json({ error: "Student profile avatar update failed" }, { status: 500, headers: corsHeaders });
           }
         }
         // --- AUTH ROUTES ---
