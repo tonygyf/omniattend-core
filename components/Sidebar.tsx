@@ -35,6 +35,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
   const [avatarPreview, setAvatarPreview] = React.useState('');
   const [avatarError, setAvatarError] = React.useState('');
   const [avatarCacheKey, setAvatarCacheKey] = React.useState(Date.now());
+  const [cropOpen, setCropOpen] = React.useState(false);
+  const [cropSourceUrl, setCropSourceUrl] = React.useState('');
+  const [cropZoom, setCropZoom] = React.useState(1);
+  const [cropOffsetX, setCropOffsetX] = React.useState(0);
+  const [cropOffsetY, setCropOffsetY] = React.useState(0);
+  const [cropImageSize, setCropImageSize] = React.useState<{ width: number; height: number } | null>(null);
+  const cropViewportSize = 280;
+  const dragRef = React.useRef<{ active: boolean; x: number; y: number }>({ active: false, x: 0, y: 0 });
 
   React.useEffect(() => {
     if (editOpen) {
@@ -46,6 +54,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
       setAvatarPreview('');
       setAvatarError('');
       setUploadStatus('');
+      setCropOpen(false);
+      setCropSourceUrl('');
     }
   }, [editOpen, user]);
   
@@ -58,10 +68,19 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
             return;
         }
         setAvatarError('');
-        setAvatarFile(file);
-        const url = URL.createObjectURL(file);
-        setAvatarPreview(url);
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = String(reader.result || '');
+          if (!result) return;
+          setCropSourceUrl(result);
+          setCropZoom(1);
+          setCropOffsetX(0);
+          setCropOffsetY(0);
+          setCropOpen(true);
+        };
+        reader.readAsDataURL(file);
     }
+    e.currentTarget.value = '';
   };
 
   React.useEffect(() => {
@@ -73,6 +92,123 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
       if (avatarPreview) URL.revokeObjectURL(avatarPreview);
     };
   }, [avatarFile]);
+
+  React.useEffect(() => {
+    if (!cropOpen || !cropSourceUrl) {
+      setCropImageSize(null);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      setCropImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+      setCropOffsetX(0);
+      setCropOffsetY(0);
+    };
+    img.src = cropSourceUrl;
+  }, [cropOpen, cropSourceUrl]);
+
+  const getDisplaySize = React.useCallback((zoom: number) => {
+    if (!cropImageSize) return { width: cropViewportSize, height: cropViewportSize };
+    const base = Math.max(cropViewportSize / cropImageSize.width, cropViewportSize / cropImageSize.height);
+    const scale = base * zoom;
+    return {
+      width: cropImageSize.width * scale,
+      height: cropImageSize.height * scale,
+    };
+  }, [cropImageSize]);
+
+  const clampOffsets = React.useCallback((nextX: number, nextY: number, zoom = cropZoom) => {
+    const { width, height } = getDisplaySize(zoom);
+    const maxX = Math.max(0, (width - cropViewportSize) / 2);
+    const maxY = Math.max(0, (height - cropViewportSize) / 2);
+    return {
+      x: Math.min(maxX, Math.max(-maxX, nextX)),
+      y: Math.min(maxY, Math.max(-maxY, nextY)),
+    };
+  }, [cropZoom, getDisplaySize]);
+
+  const handleCropZoomChange = (nextZoom: number) => {
+    const z = Math.min(3, Math.max(1, nextZoom));
+    setCropZoom(z);
+    setCropOffsetX((prev) => clampOffsets(prev, cropOffsetY, z).x);
+    setCropOffsetY((prev) => clampOffsets(cropOffsetX, prev, z).y);
+  };
+
+  const startDrag = (clientX: number, clientY: number) => {
+    dragRef.current = { active: true, x: clientX, y: clientY };
+  };
+
+  const moveDrag = (clientX: number, clientY: number) => {
+    if (!dragRef.current.active) return;
+    const dx = clientX - dragRef.current.x;
+    const dy = clientY - dragRef.current.y;
+    dragRef.current.x = clientX;
+    dragRef.current.y = clientY;
+    const next = clampOffsets(cropOffsetX + dx, cropOffsetY + dy);
+    setCropOffsetX(next.x);
+    setCropOffsetY(next.y);
+  };
+
+  const endDrag = () => {
+    dragRef.current.active = false;
+  };
+
+  const createCroppedAvatarFile = async (sourceUrl: string) => {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = reject;
+      image.src = sourceUrl;
+    });
+
+    const { width: displayW, height: displayH } = getDisplaySize(cropZoom);
+    const left = cropViewportSize / 2 + cropOffsetX - displayW / 2;
+    const top = cropViewportSize / 2 + cropOffsetY - displayH / 2;
+    const srcX = Math.max(0, ((0 - left) / displayW) * img.naturalWidth);
+    const srcY = Math.max(0, ((0 - top) / displayH) * img.naturalHeight);
+    const srcW = Math.min(img.naturalWidth - srcX, (cropViewportSize / displayW) * img.naturalWidth);
+    const srcH = Math.min(img.naturalHeight - srcY, (cropViewportSize / displayH) * img.naturalHeight);
+
+    const outSize = 512;
+    const canvas = document.createElement('canvas');
+    canvas.width = outSize;
+    canvas.height = outSize;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('浏览器不支持 Canvas');
+
+    ctx.clearRect(0, 0, outSize, outSize);
+    ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, outSize, outSize);
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.beginPath();
+    ctx.arc(outSize / 2, outSize / 2, outSize / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.fill();
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (b) resolve(b);
+        else reject(new Error('头像导出失败'));
+      }, 'image/png', 0.95);
+    });
+
+    return new File([blob], `avatar_${Date.now()}.png`, { type: 'image/png' });
+  };
+
+  const handleCropConfirm = async () => {
+    if (!cropSourceUrl) return;
+    try {
+      const file = await createCroppedAvatarFile(cropSourceUrl);
+      setAvatarFile(file);
+      const url = URL.createObjectURL(file);
+      setAvatarPreview(url);
+      setCropOpen(false);
+      setCropSourceUrl('');
+      setAvatarError('');
+      toast.success('已完成头像裁剪');
+    } catch (e: any) {
+      setAvatarError(e?.message || '裁剪失败，请重试');
+    }
+  };
   
   const handleAvatarUpload = async () => {
     if (!user || !avatarFile) return;
@@ -309,6 +445,83 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
               className="btn-primary"
             >
               保存信息
+            </button>
+          </div>
+        </div>
+      </Modal>
+      <Modal open={cropOpen} title="裁剪头像" onClose={() => { setCropOpen(false); setCropSourceUrl(''); }}>
+        <div className="space-y-4">
+          <div className="text-xs text-slate-500 dark:text-slate-400">拖拽图片调整位置，滚动条缩放后确认裁剪。</div>
+          <div className="flex justify-center">
+            <div
+              className="relative overflow-hidden rounded-2xl bg-black select-none touch-none"
+              style={{ width: `${cropViewportSize}px`, height: `${cropViewportSize}px` }}
+              onMouseDown={(e) => startDrag(e.clientX, e.clientY)}
+              onMouseMove={(e) => moveDrag(e.clientX, e.clientY)}
+              onMouseUp={endDrag}
+              onMouseLeave={endDrag}
+              onTouchStart={(e) => {
+                const t = e.touches[0];
+                if (!t) return;
+                startDrag(t.clientX, t.clientY);
+              }}
+              onTouchMove={(e) => {
+                const t = e.touches[0];
+                if (!t) return;
+                moveDrag(t.clientX, t.clientY);
+              }}
+              onTouchEnd={endDrag}
+            >
+              {cropSourceUrl && (
+                <img
+                  src={cropSourceUrl}
+                  alt="crop source"
+                  draggable={false}
+                  style={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '50%',
+                    width: `${getDisplaySize(cropZoom).width}px`,
+                    height: `${getDisplaySize(cropZoom).height}px`,
+                    transform: `translate(calc(-50% + ${cropOffsetX}px), calc(-50% + ${cropOffsetY}px))`,
+                    userSelect: 'none',
+                    pointerEvents: 'none',
+                  }}
+                />
+              )}
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="w-full h-full rounded-full border-2 border-white/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" />
+              </div>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <div className="text-xs text-slate-500 dark:text-slate-400">缩放</div>
+            <input
+              type="range"
+              min={1}
+              max={3}
+              step={0.01}
+              value={cropZoom}
+              onChange={(e) => handleCropZoomChange(Number(e.target.value))}
+              className="w-full"
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => {
+                setCropZoom(1);
+                setCropOffsetX(0);
+                setCropOffsetY(0);
+              }}
+              className="btn-secondary"
+            >
+              重置
+            </button>
+            <button onClick={() => { setCropOpen(false); setCropSourceUrl(''); }} className="btn-secondary">
+              取消
+            </button>
+            <button onClick={handleCropConfirm} className="btn-primary">
+              确认裁剪
             </button>
           </div>
         </div>
