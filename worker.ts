@@ -296,6 +296,73 @@ function estimateImageQuality(embedding: number[]): number {
   return 1;
 }
 
+function toCheckinPhotoUrl(env: Env, request: Request, submissionBody: any): string {
+  const photoUri = (submissionBody?.photoUri || "").toString().trim();
+  if (photoUri) {
+    return toPublicImageUrl(env, request, photoUri);
+  }
+  const photoKey = (submissionBody?.photoKey || "").toString().trim();
+  if (!photoKey) return "";
+  return toPublicImageUrl(env, request, photoKey);
+}
+
+async function enrichFaceVerificationForCheckin(env: Env, request: Request, taskId: number, submissionBody: any): Promise<any> {
+  const body = submissionBody && typeof submissionBody === "object" ? { ...submissionBody } : {};
+  const task = await env.DB.prepare(
+    `SELECT faceRequired, faceMinScore
+     FROM CheckinTask
+     WHERE id = ?
+     LIMIT 1`
+  ).bind(taskId).first<any>();
+  const taskFaceRequired = Number(task?.faceRequired || 0) === 1;
+  if (!taskFaceRequired) return body;
+
+  const studentId = Number(body.studentId || 0);
+  if (!studentId) return body;
+
+  const photoUrl = toCheckinPhotoUrl(env, request, body);
+  if (!photoUrl) {
+    body.faceVerifyScore = 0;
+    body.faceVerifyPassed = 0;
+    return body;
+  }
+
+  const latestTemplate = await env.DB.prepare(
+    `SELECT vector
+     FROM FaceEmbedding
+     WHERE studentId = ?
+     ORDER BY createdAt DESC, id DESC
+     LIMIT 1`
+  ).bind(studentId).first<any>();
+  if (!latestTemplate) {
+    body.faceVerifyScore = 0;
+    body.faceVerifyPassed = 0;
+    return body;
+  }
+
+  const templateVector = toNumberArray(latestTemplate.vector);
+  if (templateVector.length !== 128) {
+    body.faceVerifyScore = 0;
+    body.faceVerifyPassed = 0;
+    return body;
+  }
+
+  const inferred = await extractEmbeddingByExternalService(env, request, photoUrl);
+  const probeVector = inferred.embedding;
+  if (probeVector.length !== templateVector.length) {
+    body.faceVerifyScore = 0;
+    body.faceVerifyPassed = 0;
+    return body;
+  }
+
+  const thresholdRaw = Number(task?.faceMinScore);
+  const threshold = Number.isFinite(thresholdRaw) ? thresholdRaw : 0.55;
+  const score = Number(cosineSimilarity(probeVector, templateVector).toFixed(4));
+  body.faceVerifyScore = score;
+  body.faceVerifyPassed = score >= threshold ? 1 : 0;
+  return body;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -1798,8 +1865,9 @@ export default {
         if (submitMatch && method === "POST") {
             try {
                 const taskId = parseInt(submitMatch[1], 10);
-                const body = await request.json();
-                const result = await submitCheckin(env.DB, taskId, body);
+                const body = await request.json<any>();
+                const normalizedBody = await enrichFaceVerificationForCheckin(env, request, taskId, body);
+                const result = await submitCheckin(env.DB, taskId, normalizedBody);
                 return Response.json({ success: true, data: { id: result.meta.last_row_id } }, { headers: corsHeaders });
             } catch (e: any) {
                 return Response.json({ error: e.message }, { status: 400, headers: corsHeaders });
