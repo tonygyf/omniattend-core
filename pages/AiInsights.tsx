@@ -21,9 +21,10 @@ const AiInsightsPage: React.FC = () => {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const [selectedClassId, setSelectedClassId] = useState<number>(0);
-  const [modelVer, setModelVer] = useState('mock-face-v1');
-  const [threshold, setThreshold] = useState(0.75);
+  const [modelVer, setModelVer] = useState('mobilefacenet.onnx');
+  const [threshold, setThreshold] = useState(0.55);
   const [maxStudents, setMaxStudents] = useState(50);
+  const [probeInput, setProbeInput] = useState('');
   const [runningEnroll, setRunningEnroll] = useState(false);
   const [runningVerify, setRunningVerify] = useState(false);
   const [enrollMessage, setEnrollMessage] = useState<string | null>(null);
@@ -58,14 +59,24 @@ const AiInsightsPage: React.FC = () => {
   }, [auth.user?.id, loadData]);
 
   const handleEnrollBatch = async () => {
+    const normalizedModelVer = modelVer.trim();
+    const normalizedMaxStudents = Math.min(200, Math.max(1, Number(maxStudents) || 1));
+    if (!normalizedModelVer) {
+      setError('模型版本不能为空。');
+      return;
+    }
+    if (modelStatus && !modelStatus.available) {
+      setError('当前模型不可用，请先点击“检测模型可用性”并确认模型可访问。');
+      return;
+    }
     setRunningEnroll(true);
     setError(null);
     setEnrollMessage(null);
     try {
       const result = await enrollFaceBatch({
         classId: selectedClassId > 0 ? selectedClassId : undefined,
-        modelVer,
-        maxStudents
+        modelVer: normalizedModelVer,
+        maxStudents: normalizedMaxStudents
       });
       if (!result.success || !result.data) {
         setError(result.error || '批量提取失败');
@@ -83,14 +94,48 @@ const AiInsightsPage: React.FC = () => {
   };
 
   const handleVerifyBatch = async () => {
+    const normalizedThreshold = Number(threshold);
+    const normalizedMaxStudents = Math.min(200, Math.max(1, Number(maxStudents) || 1));
+    if (!Number.isFinite(normalizedThreshold) || normalizedThreshold < 0 || normalizedThreshold > 1) {
+      setError('阈值必须在 0 到 1 之间。');
+      return;
+    }
+    if (modelStatus && !modelStatus.available) {
+      setError('当前模型不可用，请先点击“检测模型可用性”并确认模型可访问。');
+      return;
+    }
+
+    let probes: Array<{ studentId: number; vector: number[] }> = [];
+    try {
+      const parsed = JSON.parse(probeInput || '[]');
+      if (!Array.isArray(parsed) || parsed.length === 0) {
+        setError('批量验证需要探针向量 probes，请在输入框中提供 JSON 数组。');
+        return;
+      }
+      probes = parsed
+        .map((item: any) => ({
+          studentId: Number(item?.studentId),
+          vector: Array.isArray(item?.vector) ? item.vector.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v)) : []
+        }))
+        .filter((item: { studentId: number; vector: number[] }) => Number.isFinite(item.studentId) && item.studentId > 0 && item.vector.length === 128);
+      if (!probes.length) {
+        setError('probes 格式不正确：每项必须包含 studentId 和 128 维 vector。');
+        return;
+      }
+    } catch {
+      setError('probes JSON 解析失败，请检查格式。');
+      return;
+    }
+
     setRunningVerify(true);
     setError(null);
     setVerifyResult(null);
     try {
       const result = await verifyFaceBatch({
         classId: selectedClassId > 0 ? selectedClassId : undefined,
-        threshold,
-        maxStudents
+        threshold: normalizedThreshold,
+        maxStudents: normalizedMaxStudents,
+        probes
       });
       if (!result.success || !result.data) {
         setError(result.error || '批量测试失败');
@@ -166,7 +211,7 @@ const AiInsightsPage: React.FC = () => {
         </div>
         <h1 className="text-3xl font-bold text-slate-900">人脸特征中心</h1>
         <p className="text-slate-500 mt-1 max-w-xl mx-auto">
-          保持原页面结构，用于管理学生人脸特征向量、批量提取模板、批量测试模型效果。
+          用于管理学生人脸特征向量、批量提取模板、批量测试模型效果（默认模型 `mobilefacenet.onnx`）。
         </p>
       </div>
 
@@ -177,7 +222,7 @@ const AiInsightsPage: React.FC = () => {
       >
         <div className="flex items-center gap-3 mb-3">
           <Bot className="w-6 h-6" />
-          <h2 className="text-lg font-semibold">人脸特征批任务</h2>
+          <h2 className="text-lg font-semibold">人脸特征任务</h2>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
@@ -197,7 +242,7 @@ const AiInsightsPage: React.FC = () => {
             className="bg-white/15 rounded-lg px-3 py-2 text-sm"
             value={modelVer}
             onChange={e => setModelVer(e.target.value)}
-            placeholder="模型版本，如 mock-face-v1"
+            placeholder="模型版本，如 mobilefacenet.onnx"
           />
           <input
             className="bg-white/15 rounded-lg px-3 py-2 text-sm"
@@ -219,6 +264,12 @@ const AiInsightsPage: React.FC = () => {
             placeholder="最大批量人数"
           />
         </div>
+        <textarea
+          className="w-full bg-white/15 rounded-lg px-3 py-2 text-sm mb-4 min-h-[90px]"
+          value={probeInput}
+          onChange={e => setProbeInput(e.target.value)}
+          placeholder='批量验证 probes(JSON)，例如: [{"studentId":1,"vector":[0.01,...共128维]}]'
+        />
 
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -243,7 +294,7 @@ const AiInsightsPage: React.FC = () => {
             className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
           >
             {checkingModel ? <Loader2 className="animate-spin w-4 h-4" /> : <HelpCircle className="w-4 h-4" />}
-            {checkingModel ? '检测中...' : '检测模型可用性'}
+            {checkingModel ? '检测中...' : '检测ONNX模型可用性'}
           </button>
           {enrollMessage && <span className="text-sm bg-white/15 px-3 py-2 rounded-lg">{enrollMessage}</span>}
         </div>
@@ -251,7 +302,6 @@ const AiInsightsPage: React.FC = () => {
         {verifyResult && (
           <div className="mt-4 text-sm bg-white/15 p-3 rounded-lg">
             测试结果：总计 {verifyResult.totalCount}，通过 {verifyResult.successCount}，失败 {verifyResult.failCount}，平均分 {verifyResult.avgScore}
-            {verifyResult.simulated ? '（当前为质量模拟评分）' : '（当前为余弦相似度评分）'}
           </div>
         )}
 
@@ -259,6 +309,7 @@ const AiInsightsPage: React.FC = () => {
           <div className="mt-3 text-sm bg-white/15 p-3 rounded-lg">
             模型状态：{modelStatus.available ? '可用' : '不可用'} | 路径 {modelStatus.modelPath} | HTTP {modelStatus.status}
             {modelStatus.source ? ` | 来源 ${modelStatus.source}` : ''}
+            {modelStatus.message ? ` | 信息 ${modelStatus.message}` : ''}
           </div>
         )}
 
@@ -419,6 +470,8 @@ const HelpModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen,
         <h4 className="font-semibold text-slate-800 mb-1">1. 批量提取后模板数仍是 0</h4>
         <ul className="list-disc list-inside space-y-1">
           <li>先确认所选班级下有学生数据。</li>
+          <li>确认学生已上传头像（`Student.avatarUri`）；系统默认按头像提取向量。</li>
+          <li>若头像缺失或读取失败，后端会返回 `AVATAR_NOT_SET/AVATAR_READ_FAILED`。</li>
           <li>检查后端 `/api/face/jobs/enroll-batch` 是否返回成功。</li>
           <li>点击按钮后等待刷新完成再查看列表。</li>
         </ul>
@@ -426,6 +479,8 @@ const HelpModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen,
       <div>
         <h4 className="font-semibold text-slate-800 mb-1">2. 批量测试失败率高</h4>
         <ul className="list-disc list-inside space-y-1">
+          <li>确认 probes 已按 JSON 数组提供，且每个 `vector` 为 128 维。</li>
+          <li>未提供探针向量时，后端会返回 `MISSING_PROBE_VECTOR`。</li>
           <li>先检查模板质量分布，建议质量低于 0.75 的先重提取。</li>
           <li>适当降低阈值（例如从 0.8 调到 0.75）观察变化。</li>
         </ul>

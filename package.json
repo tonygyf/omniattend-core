@@ -15,12 +15,14 @@
     "browser-image-compression": "^2.0.2",
     "framer-motion": "^12.35.2",
     "lucide-react": "^0.562.0",
+    "onnxruntime-node": "^1.24.3",
     "papaparse": "^5.5.3",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-hot-toast": "latest",
     "react-markdown": "^10.1.0",
-    "recharts": "^3.6.0"
+    "recharts": "^3.6.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260313.1",
@@ -28,6 +30,7 @@
     "@types/node": "^22.14.0",
     "@types/papaparse": "^5.5.2",
     "@types/react-dom": "^19.2.3",
+    "@types/sharp": "^0.31.1",
     "@vitejs/plugin-react": "^5.0.0",
     "tailwindcss": "^4.2.1",
     "typescript": "~5.8.2",

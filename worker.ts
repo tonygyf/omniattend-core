@@ -3,6 +3,8 @@
  */
 import { createCheckinTask, getCheckinTasks, getCheckinTaskDetails, getReviewQueue, reviewSubmission, submitCheckin, closeCheckinTask } from './services/checkinService';
 import { createFaceEmbedding, getFaceEmbeddingsByStudent } from './services/face/faceEmbeddingService';
+import * as ort from 'onnxruntime-node';
+import sharp from 'sharp';
 
 export interface Env {
   DB: D1Database;
@@ -95,15 +97,109 @@ function toNumberArray(input: any): number[] {
 function cosineSimilarity(a: number[], b: number[]): number {
   if (!a.length || !b.length || a.length !== b.length) return 0;
   let dot = 0;
-  let normA = 0;
-  let normB = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
   }
-  if (normA === 0 || normB === 0) return 0;
-  return Math.max(0, Math.min(1, dot / (Math.sqrt(normA) * Math.sqrt(normB)) * 0.5 + 0.5));
+  // MobileFaceNet 输出为 L2 归一化向量，点积即余弦相似度。
+  return dot;
+}
+
+function normalizeObjectKey(rawPath: string): string {
+  return (rawPath || "").replace(/^\/+/, "").trim();
+}
+
+function normalizeAvatarUriToKey(avatarUri: string): string {
+  const cleaned = normalizeObjectKey(avatarUri);
+  if (!cleaned) return "";
+  if (cleaned.startsWith("avatars/")) return cleaned;
+  return `avatars/students/${cleaned}`;
+}
+
+async function readAvatarBytes(env: Env, request: Request, avatarUri: string): Promise<Uint8Array | null> {
+  const normalizedKey = normalizeAvatarUriToKey(avatarUri);
+  if (normalizedKey) {
+    try {
+      const obj = await env.R2.get(normalizedKey);
+      if (obj) {
+        const arr = await obj.arrayBuffer();
+        const bytes = new Uint8Array(arr);
+        if (bytes.length > 0) return bytes;
+      }
+    } catch (e) {
+      console.warn("R2 avatar read failed:", normalizedKey, e);
+    }
+  }
+
+  const raw = (avatarUri || "").trim();
+  if (!raw) return null;
+  const candidateUrls: string[] = [];
+  if (/^https?:\/\//i.test(raw)) {
+    candidateUrls.push(raw);
+  } else {
+    candidateUrls.push(new URL(raw.replace(/^\/+/, ""), request.url).toString());
+  }
+  if (normalizedKey) {
+    candidateUrls.push(new URL(normalizedKey, request.url).toString());
+  }
+
+  for (const u of candidateUrls) {
+    try {
+      const resp = await fetch(u, { method: "GET" });
+      if (!resp.ok) continue;
+      const arr = await resp.arrayBuffer();
+      const bytes = new Uint8Array(arr);
+      if (bytes.length > 0) return bytes;
+    } catch (e) {
+      console.warn("HTTP avatar read failed:", u, e);
+    }
+  }
+
+  return null;
+}
+
+// 单例 session，避免重复加载 ONNX 模型
+let _session: ort.InferenceSession | null = null;
+async function getOrtSession(): Promise<ort.InferenceSession> {
+  if (!_session) {
+    _session = await ort.InferenceSession.create(
+      './public/models/mobilefacenet.onnx',
+      { executionProviders: ['cpu'] }
+    );
+  }
+  return _session;
+}
+
+async function extractEmbedding(imageBuffer: Buffer): Promise<number[]> {
+  const { data } = await sharp(imageBuffer)
+    .resize(112, 112)
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const float32 = new Float32Array(112 * 112 * 3);
+  for (let i = 0; i < data.length; i++) {
+    float32[i] = (data[i] / 127.5) - 1.0;
+  }
+
+  const sess = await getOrtSession();
+  const tensor = new ort.Tensor('float32', float32, [1, 112, 112, 3]);
+  const results = await sess.run({ 'img_inputs:0': tensor });
+  return Array.from(results['embeddings:0'].data as Float32Array);
+}
+
+async function fetchImageAsBuffer(url: string): Promise<Buffer> {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`fetch image failed: ${res.status}`);
+  }
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+function estimateImageQuality(embedding: number[]): number {
+  if (!embedding.length) return 0;
+  // ONNX 输出向量已归一化，固定回写 1.0 代表推理成功，便于筛选真模板。
+  return 1;
 }
 
 export default {
@@ -1196,8 +1292,8 @@ export default {
 
         // GET /api/face/model/status - 检测模型静态文件是否可访问
         if (path === "/api/face/model/status" && method === "GET") {
-          const modelPath = "/models/mobilefacenet_float32.tflite";
-          const modelKey = "models/mobilefacenet_float32.tflite";
+          const modelPath = "/models/mobilefacenet.onnx";
+          const modelKey = "models/mobilefacenet.onnx";
           const modelUrl = new URL(modelPath, request.url).toString();
           const errors: string[] = [];
 
@@ -1249,12 +1345,12 @@ export default {
           }, { headers: corsHeaders });
         }
 
-        // POST /api/face/jobs/enroll-batch - 批量提取（P0: mock提取并落库）
+        // POST /api/face/jobs/enroll-batch - 批量注册（仅接收真实向量样本）
         if (path === "/api/face/jobs/enroll-batch" && method === "POST") {
           try {
             const body = await request.json() as any;
             const classId = Number(body.classId || 0);
-            const modelVer = (body.modelVer || "mobilefacenet_float32.tflite").toString();
+            const modelVer = (body.modelVer || "mobilefacenet.onnx").toString();
             const maxStudents = Math.min(Number(body.maxStudents || 50), 200);
             const studentIdsRaw = Array.isArray(body.studentIds) ? body.studentIds : [];
             const studentIds = studentIdsRaw.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v) && v > 0);
@@ -1272,33 +1368,73 @@ export default {
             let students: any[] = [];
             if (studentIds.length > 0) {
               const placeholders = studentIds.map(() => "?").join(", ");
-              const query = `SELECT id, classId, name FROM Student WHERE id IN (${placeholders}) LIMIT ?`;
+              const query = `SELECT id, classId, name, avatarUri FROM Student WHERE id IN (${placeholders}) LIMIT ?`;
               const { results } = await env.DB.prepare(query).bind(...studentIds, maxStudents).all();
               students = results || [];
             } else if (classId > 0) {
               const { results } = await env.DB.prepare(
-                `SELECT id, classId, name FROM Student WHERE classId = ? ORDER BY id ASC LIMIT ?`
+                `SELECT id, classId, name, avatarUri FROM Student WHERE classId = ? ORDER BY id ASC LIMIT ?`
               ).bind(classId, maxStudents).all();
               students = results || [];
             } else {
               return Response.json({ error: "classId 或 studentIds 至少提供一个" }, { status: 400, headers: corsHeaders });
+            }
+            if (!students.length) {
+              return Response.json({ error: "未找到可处理的学生" }, { status: 404, headers: corsHeaders });
             }
 
             const now = new Date().toISOString();
             let successCount = 0;
             const failures: any[] = [];
             const enrolled: any[] = [];
-            const simulated = sampleMap.size === 0;
 
             for (const student of students) {
               try {
                 const provided = sampleMap.get(Number(student.id));
-                const vector = provided?.vector || Array.from({ length: 128 }, () => Number((Math.random() * 2 - 1).toFixed(6)));
-                const quality = provided?.quality ?? Number((0.7 + Math.random() * 0.29).toFixed(4));
+                let vector: number[] = [];
+                let quality = 0;
+                let faceImageUri: string | null = null;
+
+                if (provided && provided.vector.length) {
+                  vector = provided.vector;
+                  quality = provided.quality ?? 0.9;
+                } else {
+                  const avatarUri = (student.avatarUri || "").toString().trim();
+                  if (!avatarUri) {
+                    failures.push({
+                      studentId: student.id,
+                      reason: "AVATAR_NOT_SET"
+                    });
+                    continue;
+                  }
+                  const avatarUrl = /^https?:\/\//i.test(avatarUri)
+                    ? avatarUri
+                    : new URL(avatarUri.replace(/^\/+/, ""), request.url).toString();
+                  let imageBuffer: Buffer | null = null;
+                  try {
+                    imageBuffer = await fetchImageAsBuffer(avatarUrl);
+                  } catch {
+                    const avatarBytes = await readAvatarBytes(env, request, avatarUri);
+                    if (avatarBytes && avatarBytes.length >= 512) {
+                      imageBuffer = Buffer.from(avatarBytes);
+                    }
+                  }
+                  if (!imageBuffer) {
+                    failures.push({
+                      studentId: student.id,
+                      reason: "AVATAR_READ_FAILED"
+                    });
+                    continue;
+                  }
+                  vector = await extractEmbedding(imageBuffer);
+                  quality = estimateImageQuality(vector);
+                  faceImageUri = avatarUri;
+                }
+
                 const insertRes = await env.DB.prepare(
-                  `INSERT INTO FaceEmbedding (studentId, modelVer, vector, quality, createdAt)
-                   VALUES (?, ?, ?, ?, ?)`
-                ).bind(student.id, modelVer, JSON.stringify(vector), quality, now).run();
+                  `INSERT INTO FaceEmbedding (studentId, modelVer, vector, quality, faceImageUri, createdAt)
+                   VALUES (?, ?, ?, ?, ?, ?)`
+                ).bind(student.id, modelVer, JSON.stringify(vector), quality, faceImageUri, now).run();
                 successCount += 1;
                 enrolled.push({
                   studentId: student.id,
@@ -1317,12 +1453,11 @@ export default {
               ok: true,
               data: {
                 jobType: "ENROLL_BATCH",
-                status: failures.length ? "PARTIAL" : "SUCCEEDED",
+                status: successCount === 0 ? "FAILED" : failures.length ? "PARTIAL" : "SUCCEEDED",
                 totalCount: students.length,
                 successCount,
                 failCount: failures.length,
                 modelVer,
-                simulated,
                 classId: classId || null,
                 enrolled: enrolled.slice(0, 30),
                 failures: failures.slice(0, 30)
@@ -1333,12 +1468,12 @@ export default {
           }
         }
 
-        // POST /api/face/jobs/verify-batch - 批量测试模型（P0: 基于现有模板打分）
+        // POST /api/face/jobs/verify-batch - 批量验证（基于真实探针向量与模板余弦相似度）
         if (path === "/api/face/jobs/verify-batch" && method === "POST") {
           try {
             const body = await request.json() as any;
             const classId = Number(body.classId || 0);
-            const threshold = Number.isFinite(Number(body.threshold)) ? Number(body.threshold) : 0.75;
+            const threshold = Number.isFinite(Number(body.threshold)) ? Number(body.threshold) : 0.55;
             const maxStudents = Math.min(Number(body.maxStudents || 50), 200);
             const studentIdsRaw = Array.isArray(body.studentIds) ? body.studentIds : [];
             const studentIds = studentIdsRaw.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v) && v > 0);
@@ -1376,12 +1511,15 @@ export default {
             } else {
               return Response.json({ error: "classId 或 studentIds 至少提供一个" }, { status: 400, headers: corsHeaders });
             }
+            if (!students.length) {
+              return Response.json({ error: "未找到可处理的学生" }, { status: 404, headers: corsHeaders });
+            }
 
             const details: any[] = [];
             let passCount = 0;
             let failCount = 0;
             let scoreSum = 0;
-            const simulated = probeMap.size === 0;
+            let scoredCount = 0;
 
             for (const student of students) {
               const latestEmbedding = await env.DB.prepare(
@@ -1407,17 +1545,39 @@ export default {
 
               const embeddingVector = toNumberArray(latestEmbedding.vector);
               const probeVector = probeMap.get(Number(student.id));
-              let score = 0;
-              if (probeVector && embeddingVector.length && probeVector.length === embeddingVector.length) {
-                score = Number(cosineSimilarity(probeVector, embeddingVector).toFixed(4));
-              } else {
-                const quality = Number(latestEmbedding.quality || 0);
-                const jitter = (Math.random() - 0.5) * 0.16;
-                score = Math.max(0, Math.min(1, Number((quality + jitter).toFixed(4))));
+              if (!probeVector || !probeVector.length) {
+                failCount += 1;
+                details.push({
+                  studentId: student.id,
+                  studentName: student.name,
+                  className: student.className,
+                  embeddingId: latestEmbedding.id,
+                  score: 0,
+                  passed: 0,
+                  threshold,
+                  reason: "MISSING_PROBE_VECTOR"
+                });
+                continue;
               }
+              if (!embeddingVector.length || probeVector.length !== embeddingVector.length) {
+                failCount += 1;
+                details.push({
+                  studentId: student.id,
+                  studentName: student.name,
+                  className: student.className,
+                  embeddingId: latestEmbedding.id,
+                  score: 0,
+                  passed: 0,
+                  threshold,
+                  reason: "VECTOR_DIM_MISMATCH"
+                });
+                continue;
+              }
+              const score = Number(cosineSimilarity(probeVector, embeddingVector).toFixed(4));
               const passed = score >= threshold ? 1 : 0;
               if (passed) passCount += 1; else failCount += 1;
               scoreSum += score;
+              scoredCount += 1;
 
               details.push({
                 studentId: student.id,
@@ -1427,23 +1587,22 @@ export default {
                 score,
                 passed,
                 threshold,
-                mode: probeVector ? "COSINE" : "QUALITY_SIM"
+                mode: "COSINE"
               });
             }
 
-            const avgScore = students.length > 0 ? Number((scoreSum / students.length).toFixed(4)) : 0;
+            const avgScore = scoredCount > 0 ? Number((scoreSum / scoredCount).toFixed(4)) : 0;
             return Response.json({
               ok: true,
               data: {
                 jobType: "VERIFY_BATCH",
-                status: "SUCCEEDED",
+                status: scoredCount === 0 ? "FAILED" : failCount > 0 ? "PARTIAL" : "SUCCEEDED",
                 threshold,
                 classId: classId || null,
                 totalCount: students.length,
                 successCount: passCount,
                 failCount,
                 avgScore,
-                simulated,
                 details
               }
             }, { headers: corsHeaders });

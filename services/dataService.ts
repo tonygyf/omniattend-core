@@ -487,7 +487,7 @@ export const verifyFaceBatch = async (payload: {
 export const fetchFaceModelStatus = async (): Promise<FaceModelStatus | null> => {
   if (isDemoAccount()) {
     await delay();
-    return { modelPath: '/models/mobilefacenet_float32.tflite', available: false, status: 0, message: 'demo account' };
+    return { modelPath: '/models/mobilefacenet.onnx', available: false, status: 0, source: 'NONE', message: 'demo account' };
   }
   try {
     const { data } = await safeFetchJSON<any>(`${API_BASE_URL}/api/face/model/status`);

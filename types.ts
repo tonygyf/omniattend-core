@@ -277,7 +277,6 @@ export interface FaceEnrollBatchResult {
   successCount: number;
   failCount: number;
   modelVer: string;
-  simulated?: boolean;
   classId?: number | null;
   enrolled: Array<{
     studentId: number;
@@ -299,19 +298,18 @@ export interface FaceVerifyBatchDetail {
   passed: 0 | 1;
   threshold?: number;
   reason?: string;
-  mode?: 'COSINE' | 'QUALITY_SIM';
+  mode?: 'COSINE';
 }
 
 export interface FaceVerifyBatchResult {
   jobType: 'VERIFY_BATCH';
-  status: 'SUCCEEDED' | 'FAILED';
+  status: 'SUCCEEDED' | 'PARTIAL' | 'FAILED';
   threshold: number;
   classId?: number | null;
   totalCount: number;
   successCount: number;
   failCount: number;
   avgScore: number;
-  simulated?: boolean;
   details: FaceVerifyBatchDetail[];
 }
 
