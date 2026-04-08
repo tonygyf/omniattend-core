@@ -124,7 +124,8 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
         photoKey,
         photoUri,
         faceVerifyScore,
-        faceVerifyPassed
+        faceVerifyPassed,
+        faceVerifyReason
     } = submissionData;
 
     if (!studentId) {
@@ -199,6 +200,10 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
     if (normalizedFacePassed === 0) {
         autoResult = 'FAIL';
         reasons.push('Face verification failed.');
+    }
+    const normalizedFaceVerifyReason = (faceVerifyReason || '').toString().trim();
+    if (normalizedFaceVerifyReason) {
+        reasons.push(`Face verify reason: ${normalizedFaceVerifyReason}`);
     }
     if (normalizedFaceScore != null) {
         reasons.push(`Face score: ${normalizedFaceScore.toFixed(4)}`);
@@ -307,6 +312,20 @@ export async function reviewSubmission(db: D1Database, submissionId: number, rev
 
     const manualResult = action === 'approve' ? 'APPROVED' : 'REJECTED';
     const finalResult = manualResult; // The final result is the same as the manual one
+    const submission = await db.prepare(
+        `SELECT reason
+         FROM CheckinSubmission
+         WHERE id = ? AND finalResult = 'PENDING_REVIEW'`
+    ).bind(submissionId).first<any>();
+    if (!submission) {
+        throw new Error("Submission not found or not in review queue.");
+    }
+
+    const existingReason = (submission.reason || '').toString().trim();
+    const reviewerReason = (reason || '').toString().trim();
+    const mergedReason = reviewerReason
+        ? (existingReason ? `${existingReason}; Reviewer note: ${reviewerReason}` : `Reviewer note: ${reviewerReason}`)
+        : (existingReason || null);
 
     const ps = db.prepare(`
         UPDATE CheckinSubmission
@@ -316,7 +335,7 @@ export async function reviewSubmission(db: D1Database, submissionId: number, rev
         manualResult,
         finalResult,
         reviewerId,
-        reason || null, // Use the provided reason, or null if not given
+        mergedReason,
         submissionId
     );
 

@@ -183,6 +183,26 @@ async function getFaceInferenceConfig(env: Env): Promise<FaceInferenceConfig> {
   };
 }
 
+async function warmupFaceInferenceService(env: Env): Promise<void> {
+  try {
+    const cfg = await getFaceInferenceConfig(env);
+    const headers: Record<string, string> = {};
+    if (cfg.apiKey) headers["X-API-Key"] = cfg.apiKey;
+    const resp = await fetch(`${cfg.baseUrl}/health`, {
+      method: "GET",
+      headers
+    });
+    if (!resp.ok) {
+      console.warn("Face warmup failed:", cfg.baseUrl, resp.status);
+      return;
+    }
+    const payload = await resp.json<any>().catch(() => null);
+    console.log("Face warmup ok:", cfg.baseUrl, payload?.ok === true ? "ok" : "unknown");
+  } catch (e) {
+    console.warn("Face warmup error:", e);
+  }
+}
+
 async function extractEmbeddingByExternalService(env: Env, request: Request, avatarUri: string): Promise<{ embedding: number[]; modelVer: string; source: "DB" | "ENV" | "DEFAULT" }> {
   const imageUrl = toPublicImageUrl(env, request, avatarUri);
   if (!imageUrl) {
@@ -310,13 +330,13 @@ function estimateImageQuality(embedding: number[]): number {
 }
 
 function toCheckinPhotoUrl(env: Env, request: Request, submissionBody: any): string {
-  const photoUri = (submissionBody?.photoUri || "").toString().trim();
-  if (photoUri) {
-    return toPublicImageUrl(env, request, photoUri);
-  }
   const photoKey = (submissionBody?.photoKey || "").toString().trim();
-  if (!photoKey) return "";
-  return toPublicImageUrl(env, request, photoKey);
+  if (photoKey) {
+    return toPublicImageUrl(env, request, photoKey);
+  }
+  const photoUri = (submissionBody?.photoUri || "").toString().trim();
+  if (!photoUri) return "";
+  return toPublicImageUrl(env, request, photoUri);
 }
 
 async function enrichFaceVerificationForCheckin(env: Env, request: Request, taskId: number, submissionBody: any): Promise<any> {
@@ -337,6 +357,7 @@ async function enrichFaceVerificationForCheckin(env: Env, request: Request, task
   if (!photoUrl) {
     body.faceVerifyScore = 0;
     body.faceVerifyPassed = 0;
+    body.faceVerifyReason = "FACE_PHOTO_MISSING";
     return body;
   }
 
@@ -350,6 +371,7 @@ async function enrichFaceVerificationForCheckin(env: Env, request: Request, task
   if (!latestTemplate) {
     body.faceVerifyScore = 0;
     body.faceVerifyPassed = 0;
+    body.faceVerifyReason = "FACE_TEMPLATE_MISSING";
     return body;
   }
 
@@ -357,14 +379,25 @@ async function enrichFaceVerificationForCheckin(env: Env, request: Request, task
   if (templateVector.length !== 128) {
     body.faceVerifyScore = 0;
     body.faceVerifyPassed = 0;
+    body.faceVerifyReason = "FACE_TEMPLATE_INVALID";
     return body;
   }
 
-  const inferred = await extractEmbeddingByExternalService(env, request, photoUrl);
-  const probeVector = inferred.embedding;
+  let probeVector: number[] = [];
+  try {
+    const inferred = await extractEmbeddingByExternalService(env, request, photoUrl);
+    probeVector = inferred.embedding;
+  } catch (err: any) {
+    body.faceVerifyScore = 0;
+    body.faceVerifyPassed = 0;
+    body.faceVerifyReason = (err?.message || "FACE_INFERENCE_FAILED").toString().slice(0, 120);
+    return body;
+  }
+
   if (probeVector.length !== templateVector.length) {
     body.faceVerifyScore = 0;
     body.faceVerifyPassed = 0;
+    body.faceVerifyReason = "FACE_VECTOR_DIM_MISMATCH";
     return body;
   }
 
@@ -373,6 +406,7 @@ async function enrichFaceVerificationForCheckin(env: Env, request: Request, task
   const score = Number(cosineSimilarity(probeVector, templateVector).toFixed(4));
   body.faceVerifyScore = score;
   body.faceVerifyPassed = score >= threshold ? 1 : 0;
+  body.faceVerifyReason = body.faceVerifyPassed === 1 ? "FACE_OK" : "FACE_SCORE_BELOW_THRESHOLD";
   return body;
 }
 
@@ -2334,4 +2368,9 @@ export default {
       return Response.json({ error: err.message }, { status: 500, headers: corsHeaders });
     }
   },
+  async scheduled(event: any, env: Env, ctx: ExecutionContext): Promise<void> {
+    const cron = (event?.cron || "").toString();
+    console.log("Scheduled trigger:", cron || "unknown");
+    ctx.waitUntil(warmupFaceInferenceService(env));
+  }
 };
