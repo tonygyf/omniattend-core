@@ -25,6 +25,8 @@ import {
 import { CheckCircle2, Clock, XCircle, AlertCircle, Plus, MapPin, Hand, Key, Users, Eye, EyeOff, X, Loader2, UserCheck, UserX, ShieldQuestion } from 'lucide-react';
 import toast from 'react-hot-toast';
 
+const CHECKIN_CDN_BASE_URL = 'https://files.gyf123.dpdns.org';
+
 // Main Page Component
 const AttendancePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -492,6 +494,17 @@ const ActiveTaskDetails: React.FC<{ task: CheckinTask, onClose: () => void }> = 
     return '•'.repeat(Math.max(6, value.length));
   };
 
+  const resolveSubmissionPhotoUrl = (sub: CheckinSubmission) => {
+    const fromUri = (sub.photoUri || '').trim();
+    if (fromUri) {
+      if (/^https?:\/\//i.test(fromUri)) return fromUri;
+      return `${CHECKIN_CDN_BASE_URL.replace(/\/+$/, '')}/${fromUri.replace(/^\/+/, '')}`;
+    }
+    const fromKey = (sub.photoKey || '').trim();
+    if (!fromKey) return '';
+    return `${CHECKIN_CDN_BASE_URL.replace(/\/+$/, '')}/${fromKey.replace(/^\/+/, '')}`;
+  };
+
   return (
     <div className="fixed inset-0 bg-slate-900/50 z-40 flex items-center justify-center p-4 backdrop-blur-sm">
         <div className="bg-slate-50 rounded-2xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col">
@@ -563,6 +576,22 @@ const ActiveTaskDetails: React.FC<{ task: CheckinTask, onClose: () => void }> = 
                                             <div className="min-w-0 flex-1">
                                                 <p className="font-medium text-sm">{sub.studentName} <span className="text-xs text-slate-500">({sub.studentSid})</span></p>
                                                 <p className="text-xs text-amber-700 mt-1">原因: {sub.reason}</p>
+                                                {resolveSubmissionPhotoUrl(sub) && (
+                                                    <a
+                                                        href={resolveSubmissionPhotoUrl(sub)}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="mt-2 inline-flex flex-col gap-1"
+                                                        title="点击查看原图"
+                                                    >
+                                                        <img
+                                                            src={resolveSubmissionPhotoUrl(sub)}
+                                                            alt="签到附件"
+                                                            className="h-24 w-24 rounded-md border border-amber-200 object-cover bg-white"
+                                                        />
+                                                        <span className="text-[11px] text-blue-600">查看签到照片</span>
+                                                    </a>
+                                                )}
                                                 {(sub.gestureInput || sub.passwordInput) && (
                                                     <div className="mt-2 space-y-1">
                                                         {sub.gestureInput && (
