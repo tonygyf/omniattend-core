@@ -314,9 +314,19 @@ export interface FaceVerifyBatchResult {
 }
 
 export interface FaceModelStatus {
-  modelPath: string;
+  modelVer: string;
   available: boolean;
   status: number;
-  source?: 'ASSETS' | 'R2' | 'NONE';
+  source?: 'FACE_INFERENCE_SERVICE' | 'NONE';
+  endpoint?: string;
+  configSource?: 'DB' | 'ENV' | 'DEFAULT';
   message?: string;
+}
+
+export interface FaceInferenceServiceConfig {
+  baseUrl: string;
+  timeoutMs: number;
+  modelVer: string;
+  source: 'DB' | 'ENV' | 'DEFAULT';
+  hasApiKey: boolean;
 }

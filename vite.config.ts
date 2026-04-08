@@ -38,7 +38,6 @@ export default defineConfig(({ mode }) => {
               ) {
                 return 'markdown';
               }
-              if (id.includes('@tensorflow/tfjs') || id.includes('@tensorflow/tfjs-tflite')) return 'tfjs';
               return 'vendor-misc';
             }
           }

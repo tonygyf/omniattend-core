@@ -14,7 +14,8 @@ import {
   FaceTemplateSummaryItem,
   FaceEnrollBatchResult,
   FaceVerifyBatchResult,
-  FaceModelStatus
+  FaceModelStatus,
+  FaceInferenceServiceConfig
 } from '../types';
 
 const USE_MOCK = false;
@@ -487,13 +488,92 @@ export const verifyFaceBatch = async (payload: {
 export const fetchFaceModelStatus = async (): Promise<FaceModelStatus | null> => {
   if (isDemoAccount()) {
     await delay();
-    return { modelPath: '/models/mobilefacenet.onnx', available: false, status: 0, source: 'NONE', message: 'demo account' };
+    return {
+      modelVer: 'mobilefacenet.onnx',
+      available: false,
+      status: 0,
+      source: 'NONE',
+      endpoint: '',
+      message: 'demo account'
+    };
   }
   try {
     const { data } = await safeFetchJSON<any>(`${API_BASE_URL}/api/face/model/status`);
-    return data || null;
+    if (!data) return null;
+    return {
+      modelVer: String(data.modelVer || 'mobilefacenet.onnx'),
+      available: Boolean(data.available),
+      status: Number(data.status || 0),
+      source: data.source === 'FACE_INFERENCE_SERVICE' ? 'FACE_INFERENCE_SERVICE' : 'NONE',
+      endpoint: data.endpoint ? String(data.endpoint) : '',
+      configSource: data.configSource === 'DB' || data.configSource === 'ENV' || data.configSource === 'DEFAULT' ? data.configSource : undefined,
+      message: data.message ? String(data.message) : undefined
+    };
   } catch (e) {
     console.warn('Failed to fetch face model status', e);
     return null;
+  }
+};
+
+export const fetchFaceInferenceConfig = async (): Promise<FaceInferenceServiceConfig | null> => {
+  if (isDemoAccount()) {
+    await delay();
+    return {
+      baseUrl: 'https://gyf111-mobilefacenet-server.hf.space',
+      timeoutMs: 15000,
+      modelVer: 'mobilefacenet.onnx',
+      source: 'DEFAULT',
+      hasApiKey: false
+    };
+  }
+  try {
+    const { data } = await safeFetchJSON<any>(`${API_BASE_URL}/api/face/inference/config`);
+    if (!data) return null;
+    return {
+      baseUrl: String(data.baseUrl || ''),
+      timeoutMs: Number(data.timeoutMs || 15000),
+      modelVer: String(data.modelVer || 'mobilefacenet.onnx'),
+      source: data.source === 'DB' || data.source === 'ENV' || data.source === 'DEFAULT' ? data.source : 'DEFAULT',
+      hasApiKey: Boolean(data.hasApiKey)
+    };
+  } catch (e) {
+    console.warn('Failed to fetch face inference config', e);
+    return null;
+  }
+};
+
+export const saveFaceInferenceConfig = async (payload: {
+  baseUrl: string;
+  timeoutMs: number;
+  modelVer: string;
+  apiToken?: string;
+}): Promise<{ success: boolean; data?: FaceInferenceServiceConfig; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号仅可查看 mock 数据' };
+  }
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/face/inference/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+      body: JSON.stringify(payload)
+    });
+    const json: any = await res.json();
+    if (!res.ok || !json?.ok) {
+      return { success: false, error: json?.error || '保存推理配置失败' };
+    }
+    const data = json?.data || {};
+    return {
+      success: true,
+      data: {
+        baseUrl: String(data.baseUrl || ''),
+        timeoutMs: Number(data.timeoutMs || 15000),
+        modelVer: String(data.modelVer || 'mobilefacenet.onnx'),
+        source: data.source === 'DB' || data.source === 'ENV' || data.source === 'DEFAULT' ? data.source : 'DB',
+        hasApiKey: Boolean(data.hasApiKey)
+      }
+    };
+  } catch (e) {
+    console.error('Save face inference config error:', e);
+    return { success: false, error: '网络错误' };
   }
 };

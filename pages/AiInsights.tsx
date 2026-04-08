@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { fetchClassrooms, fetchFaceTemplateSummary, enrollFaceBatch, verifyFaceBatch, fetchFaceModelStatus } from '../services/dataService';
-import { Classroom, FaceTemplateSummaryItem, FaceVerifyBatchResult, FaceModelStatus } from '../types';
+import { fetchClassrooms, fetchFaceTemplateSummary, enrollFaceBatch, verifyFaceBatch, fetchFaceModelStatus, fetchFaceInferenceConfig, saveFaceInferenceConfig } from '../services/dataService';
+import { Classroom, FaceTemplateSummaryItem, FaceVerifyBatchResult, FaceModelStatus, FaceInferenceServiceConfig } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { Loader2, AlertTriangle, Sparkles, Bot, HelpCircle, List, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -31,6 +31,12 @@ const AiInsightsPage: React.FC = () => {
   const [verifyResult, setVerifyResult] = useState<FaceVerifyBatchResult | null>(null);
   const [modelStatus, setModelStatus] = useState<FaceModelStatus | null>(null);
   const [checkingModel, setCheckingModel] = useState(false);
+  const [inferenceConfig, setInferenceConfig] = useState<FaceInferenceServiceConfig | null>(null);
+  const [configBaseUrl, setConfigBaseUrl] = useState('https://gyf111-mobilefacenet-server.hf.space');
+  const [configModelVer, setConfigModelVer] = useState('mobilefacenet.onnx');
+  const [configTimeoutMs, setConfigTimeoutMs] = useState(15000);
+  const [configApiToken, setConfigApiToken] = useState('');
+  const [savingConfig, setSavingConfig] = useState(false);
 
   const auth = useAuth();
 
@@ -55,6 +61,16 @@ const AiInsightsPage: React.FC = () => {
   useEffect(() => {
     if (auth.user?.id) {
       loadData();
+      void (async () => {
+        const cfg = await fetchFaceInferenceConfig();
+        if (cfg) {
+          setInferenceConfig(cfg);
+          setConfigBaseUrl(cfg.baseUrl || 'https://gyf111-mobilefacenet-server.hf.space');
+          setConfigModelVer(cfg.modelVer || 'mobilefacenet.onnx');
+          setConfigTimeoutMs(Number(cfg.timeoutMs || 15000));
+          setModelVer(prev => (prev.trim() ? prev : (cfg.modelVer || 'mobilefacenet.onnx')));
+        }
+      })();
     }
   }, [auth.user?.id, loadData]);
 
@@ -108,19 +124,17 @@ const AiInsightsPage: React.FC = () => {
     let probes: Array<{ studentId: number; vector: number[] }> = [];
     try {
       const parsed = JSON.parse(probeInput || '[]');
-      if (!Array.isArray(parsed) || parsed.length === 0) {
-        setError('批量验证需要探针向量 probes，请在输入框中提供 JSON 数组。');
-        return;
-      }
-      probes = parsed
-        .map((item: any) => ({
-          studentId: Number(item?.studentId),
-          vector: Array.isArray(item?.vector) ? item.vector.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v)) : []
-        }))
-        .filter((item: { studentId: number; vector: number[] }) => Number.isFinite(item.studentId) && item.studentId > 0 && item.vector.length === 128);
-      if (!probes.length) {
-        setError('probes 格式不正确：每项必须包含 studentId 和 128 维 vector。');
-        return;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        probes = parsed
+          .map((item: any) => ({
+            studentId: Number(item?.studentId),
+            vector: Array.isArray(item?.vector) ? item.vector.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v)) : []
+          }))
+          .filter((item: { studentId: number; vector: number[] }) => Number.isFinite(item.studentId) && item.studentId > 0 && item.vector.length === 128);
+        if (!probes.length) {
+          setError('probes 格式不正确：每项必须包含 studentId 和 128 维 vector。');
+          return;
+        }
       }
     } catch {
       setError('probes JSON 解析失败，请检查格式。');
@@ -156,6 +170,37 @@ const AiInsightsPage: React.FC = () => {
       setModelStatus(status);
     } finally {
       setCheckingModel(false);
+    }
+  };
+
+  const handleSaveInferenceConfig = async () => {
+    const baseUrl = configBaseUrl.trim().replace(/\/+$/, '');
+    const model = configModelVer.trim() || 'mobilefacenet.onnx';
+    const timeout = Math.min(60000, Math.max(1000, Number(configTimeoutMs) || 15000));
+    if (!/^https?:\/\//i.test(baseUrl)) {
+      setError('推理服务地址必须是 http/https。');
+      return;
+    }
+    setSavingConfig(true);
+    setError(null);
+    try {
+      const result = await saveFaceInferenceConfig({
+        baseUrl,
+        modelVer: model,
+        timeoutMs: timeout,
+        apiToken: configApiToken
+      });
+      if (!result.success || !result.data) {
+        setError(result.error || '保存推理配置失败');
+        return;
+      }
+      setInferenceConfig(result.data);
+      setConfigApiToken('');
+      setModelVer(model);
+      const status = await fetchFaceModelStatus();
+      setModelStatus(status);
+    } finally {
+      setSavingConfig(false);
     }
   };
 
@@ -211,7 +256,7 @@ const AiInsightsPage: React.FC = () => {
         </div>
         <h1 className="text-3xl font-bold text-slate-900">人脸特征中心</h1>
         <p className="text-slate-500 mt-1 max-w-xl mx-auto">
-          用于管理学生人脸特征向量、批量提取模板、批量测试模型效果（默认模型 `mobilefacenet.onnx`）。
+          用于管理学生人脸特征向量、批量提取模板、批量测试模型效果（通过 HuggingFace 推理中心调用默认模型 `mobilefacenet.onnx`）。
         </p>
       </div>
 
@@ -268,7 +313,7 @@ const AiInsightsPage: React.FC = () => {
           className="w-full bg-white/15 rounded-lg px-3 py-2 text-sm mb-4 min-h-[90px]"
           value={probeInput}
           onChange={e => setProbeInput(e.target.value)}
-          placeholder='批量验证 probes(JSON)，例如: [{"studentId":1,"vector":[0.01,...共128维]}]'
+          placeholder='可选：probes(JSON)，例如 [{"studentId":1,"vector":[0.01,...共128维]}]；留空时自动使用头像走 HuggingFace 提取探针'
         />
 
         <div className="flex flex-wrap items-center gap-3">
@@ -294,7 +339,7 @@ const AiInsightsPage: React.FC = () => {
             className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
           >
             {checkingModel ? <Loader2 className="animate-spin w-4 h-4" /> : <HelpCircle className="w-4 h-4" />}
-            {checkingModel ? '检测中...' : '检测ONNX模型可用性'}
+            {checkingModel ? '检测中...' : '检测HuggingFace服务可用性'}
           </button>
           {enrollMessage && <span className="text-sm bg-white/15 px-3 py-2 rounded-lg">{enrollMessage}</span>}
         </div>
@@ -307,11 +352,58 @@ const AiInsightsPage: React.FC = () => {
 
         {modelStatus && (
           <div className="mt-3 text-sm bg-white/15 p-3 rounded-lg">
-            模型状态：{modelStatus.available ? '可用' : '不可用'} | 路径 {modelStatus.modelPath} | HTTP {modelStatus.status}
+            模型状态：{modelStatus.available ? '可用' : '不可用'} | 模型 {modelStatus.modelVer} | HTTP {modelStatus.status}
+            {modelStatus.endpoint ? ` | 服务 ${modelStatus.endpoint}` : ''}
             {modelStatus.source ? ` | 来源 ${modelStatus.source}` : ''}
+            {modelStatus.configSource ? ` | 配置 ${modelStatus.configSource}` : ''}
             {modelStatus.message ? ` | 信息 ${modelStatus.message}` : ''}
           </div>
         )}
+
+        <div className="mt-3 bg-white/10 p-3 rounded-lg space-y-2">
+          <div className="text-sm font-semibold">推理中心配置（默认 HuggingFace）</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <input
+              className="bg-white/15 rounded-lg px-3 py-2 text-sm"
+              value={configBaseUrl}
+              onChange={e => setConfigBaseUrl(e.target.value)}
+              placeholder="推理服务地址"
+            />
+            <input
+              className="bg-white/15 rounded-lg px-3 py-2 text-sm"
+              value={configModelVer}
+              onChange={e => setConfigModelVer(e.target.value)}
+              placeholder="模型版本"
+            />
+            <input
+              className="bg-white/15 rounded-lg px-3 py-2 text-sm"
+              type="number"
+              min={1000}
+              max={60000}
+              value={configTimeoutMs}
+              onChange={e => setConfigTimeoutMs(Number(e.target.value))}
+              placeholder="超时毫秒"
+            />
+          </div>
+          <input
+            className="w-full bg-white/15 rounded-lg px-3 py-2 text-sm"
+            value={configApiToken}
+            onChange={e => setConfigApiToken(e.target.value)}
+            placeholder="可选：API Key（留空则不改）"
+          />
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <button
+              onClick={handleSaveInferenceConfig}
+              disabled={savingConfig || loading}
+              className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
+            >
+              {savingConfig ? '保存中...' : '保存推理配置'}
+            </button>
+            {inferenceConfig ? (
+              <span>当前来源 {inferenceConfig.source} | 已配置密钥 {inferenceConfig.hasApiKey ? '是' : '否'}</span>
+            ) : null}
+          </div>
+        </div>
 
         {error && <div className="bg-red-800/50 p-3 rounded-lg text-sm mt-4">{error}</div>}
       </motion.div>
@@ -479,8 +571,9 @@ const HelpModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen,
       <div>
         <h4 className="font-semibold text-slate-800 mb-1">2. 批量测试失败率高</h4>
         <ul className="list-disc list-inside space-y-1">
-          <li>确认 probes 已按 JSON 数组提供，且每个 `vector` 为 128 维。</li>
-          <li>未提供探针向量时，后端会返回 `MISSING_PROBE_VECTOR`。</li>
+          <li>可不填 probes，系统会自动使用学生头像经 HuggingFace 提取探针向量。</li>
+          <li>若手动提供 probes，需为 JSON 数组且每个 `vector` 为 128 维。</li>
+          <li>若学生无头像且未手动提供 probes，后端会返回 `MISSING_PROBE_VECTOR`。</li>
           <li>先检查模板质量分布，建议质量低于 0.75 的先重提取。</li>
           <li>适当降低阈值（例如从 0.8 调到 0.75）观察变化。</li>
         </ul>

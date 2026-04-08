@@ -179,9 +179,9 @@ CREATE TABLE FaceInferenceService (
     updatedAt TEXT DEFAULT (CURRENT_TIMESTAMP)
 );
 
--- 11.1 默认人脸特征中心配置（部署后请改为你的 Space 地址）
+-- 11.1 默认人脸特征中心配置（可按需改为你自己的 Space 地址）
 INSERT INTO FaceInferenceService (name, baseUrl, modelVer, isActive)
-VALUES ('huggingface-mobilefacenet', 'https://your-username-mobilefacenet-server.hf.space', 'mobilefacenet.onnx', 1);
+VALUES ('huggingface-mobilefacenet', 'https://gyf111-mobilefacenet-server.hf.space', 'mobilefacenet.onnx', 1);
 
 -- ==================== 索引 ====================
 CREATE INDEX idx_classroom_teacher          ON Classroom(teacherId);

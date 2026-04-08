@@ -115,8 +115,11 @@ type FaceInferenceConfig = {
   apiKey: string;
   timeoutMs: number;
   modelVer: string;
-  source: "DB" | "ENV";
+  source: "DB" | "ENV" | "DEFAULT";
 };
+
+const DEFAULT_FACE_INFER_BASE_URL = "https://gyf111-mobilefacenet-server.hf.space";
+const PLACEHOLDER_FACE_INFER_BASE_URL = "https://your-username-mobilefacenet-server.hf.space";
 
 function normalizeObjectKey(rawPath: string): string {
   return (rawPath || "").replace(/^\/+/, "").trim();
@@ -144,8 +147,12 @@ async function getFaceInferenceConfig(env: Env): Promise<FaceInferenceConfig> {
     ).first<any>();
 
     if (row?.baseUrl) {
+      const configuredBaseUrl = String(row.baseUrl).trim();
+      const normalizedBaseUrl = configuredBaseUrl === PLACEHOLDER_FACE_INFER_BASE_URL
+        ? DEFAULT_FACE_INFER_BASE_URL
+        : configuredBaseUrl;
       return {
-        baseUrl: String(row.baseUrl).replace(/\/+$/, ""),
+        baseUrl: normalizedBaseUrl.replace(/\/+$/, ""),
         apiKey: (row.apiToken || "").toString().trim(),
         timeoutMs: Math.max(Number(row.timeoutMs || 15000), 1000),
         modelVer: (row.modelVer || "mobilefacenet.onnx").toString(),
@@ -157,20 +164,26 @@ async function getFaceInferenceConfig(env: Env): Promise<FaceInferenceConfig> {
   }
 
   const envBaseUrl = (env.FACE_INFER_BASE_URL || "").toString().trim();
-  if (!envBaseUrl) {
-    throw new Error("FACE_INFERENCE_CONFIG_MISSING");
+  if (envBaseUrl) {
+    return {
+      baseUrl: envBaseUrl.replace(/\/+$/, ""),
+      apiKey: (env.FACE_INFER_API_KEY || "").toString().trim(),
+      timeoutMs: 15000,
+      modelVer: "mobilefacenet.onnx",
+      source: "ENV"
+    };
   }
 
   return {
-    baseUrl: envBaseUrl.replace(/\/+$/, ""),
-    apiKey: (env.FACE_INFER_API_KEY || "").toString().trim(),
+    baseUrl: DEFAULT_FACE_INFER_BASE_URL,
+    apiKey: "",
     timeoutMs: 15000,
     modelVer: "mobilefacenet.onnx",
-    source: "ENV"
+    source: "DEFAULT"
   };
 }
 
-async function extractEmbeddingByExternalService(env: Env, request: Request, avatarUri: string): Promise<{ embedding: number[]; modelVer: string; source: "DB" | "ENV" }> {
+async function extractEmbeddingByExternalService(env: Env, request: Request, avatarUri: string): Promise<{ embedding: number[]; modelVer: string; source: "DB" | "ENV" | "DEFAULT" }> {
   const imageUrl = toPublicImageUrl(env, request, avatarUri);
   if (!imageUrl) {
     throw new Error("AVATAR_URL_INVALID");
@@ -224,7 +237,7 @@ async function extractEmbeddingsBatchByExternalService(
   students: Array<{ studentId: number; avatarUri: string }>
 ): Promise<{
   modelVer: string;
-  source: "DB" | "ENV";
+  source: "DB" | "ENV" | "DEFAULT";
   successMap: Map<number, number[]>;
   errorMap: Map<number, string>;
 }> {
@@ -1461,7 +1474,7 @@ export default {
               return Response.json({
                 ok: true,
                 data: {
-                  modelPath: cfg.modelVer,
+                  modelVer: cfg.modelVer,
                   available: false,
                   status: healthResp.status,
                   source: "FACE_INFERENCE_SERVICE",
@@ -1475,7 +1488,7 @@ export default {
             return Response.json({
               ok: true,
               data: {
-                modelPath: cfg.modelVer,
+                modelVer: cfg.modelVer,
                 available: true,
                 status: healthResp.status,
                 source: "FACE_INFERENCE_SERVICE",
@@ -1488,13 +1501,110 @@ export default {
             return Response.json({
               ok: true,
               data: {
-                modelPath: "mobilefacenet.onnx",
+                modelVer: "mobilefacenet.onnx",
                 available: false,
                 status: 500,
                 source: "FACE_INFERENCE_SERVICE",
+                endpoint: "",
                 message: e?.message || "health check failed"
               }
             }, { headers: corsHeaders });
+          }
+        }
+
+        // GET /api/face/inference/config - 查看当前推理中心配置（不返回明文 token）
+        if (path === "/api/face/inference/config" && method === "GET") {
+          try {
+            const cfg = await getFaceInferenceConfig(env);
+            let hasApiKey = Boolean(cfg.apiKey);
+            if (cfg.source === "DB") {
+              const row = await env.DB.prepare(
+                `SELECT apiToken
+                 FROM FaceInferenceService
+                 WHERE isActive = 1
+                 ORDER BY id DESC
+                 LIMIT 1`
+              ).first<any>();
+              hasApiKey = Boolean((row?.apiToken || "").toString().trim());
+            }
+            return Response.json({
+              ok: true,
+              data: {
+                baseUrl: cfg.baseUrl,
+                timeoutMs: cfg.timeoutMs,
+                modelVer: cfg.modelVer,
+                source: cfg.source,
+                hasApiKey
+              }
+            }, { headers: corsHeaders });
+          } catch (e: any) {
+            return Response.json({ error: e?.message || "获取推理配置失败" }, { status: 500, headers: corsHeaders });
+          }
+        }
+
+        // PUT /api/face/inference/config - 更新推理中心配置（写入 D1）
+        if (path === "/api/face/inference/config" && method === "PUT") {
+          try {
+            const body = await request.json() as any;
+            const baseUrl = (body?.baseUrl || "").toString().trim().replace(/\/+$/, "");
+            const modelVer = (body?.modelVer || "mobilefacenet.onnx").toString().trim() || "mobilefacenet.onnx";
+            const timeoutMsRaw = Number(body?.timeoutMs || 15000);
+            const timeoutMs = Number.isFinite(timeoutMsRaw) ? Math.min(Math.max(timeoutMsRaw, 1000), 60000) : 15000;
+            const hasApiTokenField = Object.prototype.hasOwnProperty.call(body || {}, "apiToken");
+            const nextApiTokenInput = hasApiTokenField ? (body?.apiToken || "").toString().trim() : null;
+
+            if (!/^https?:\/\//i.test(baseUrl)) {
+              return Response.json({ error: "baseUrl 必须是 http/https 地址" }, { status: 400, headers: corsHeaders });
+            }
+
+            const active = await env.DB.prepare(
+              `SELECT id, apiToken
+               FROM FaceInferenceService
+               WHERE isActive = 1
+               ORDER BY id DESC
+               LIMIT 1`
+            ).first<any>();
+
+            let targetId = Number(active?.id || 0);
+            let apiTokenToSave = (active?.apiToken || "").toString().trim();
+            if (nextApiTokenInput !== null) {
+              apiTokenToSave = nextApiTokenInput;
+            }
+
+            if (targetId > 0) {
+              await env.DB.prepare(
+                `UPDATE FaceInferenceService
+                 SET name = ?, baseUrl = ?, apiToken = ?, timeoutMs = ?, modelVer = ?, isActive = 1, updatedAt = CURRENT_TIMESTAMP
+                 WHERE id = ?`
+              ).bind("huggingface-mobilefacenet", baseUrl, apiTokenToSave, timeoutMs, modelVer, targetId).run();
+            } else {
+              const insertRes = await env.DB.prepare(
+                `INSERT INTO FaceInferenceService (name, baseUrl, apiToken, timeoutMs, modelVer, isActive)
+                 VALUES (?, ?, ?, ?, ?, 1)`
+              ).bind("huggingface-mobilefacenet", baseUrl, apiTokenToSave, timeoutMs, modelVer).run();
+              targetId = Number(insertRes.meta.last_row_id || 0);
+            }
+
+            if (targetId > 0) {
+              await env.DB.prepare(
+                `UPDATE FaceInferenceService
+                 SET isActive = 0
+                 WHERE isActive = 1 AND id <> ?`
+              ).bind(targetId).run();
+            }
+
+            return Response.json({
+              ok: true,
+              data: {
+                baseUrl,
+                timeoutMs,
+                modelVer,
+                source: "DB",
+                hasApiKey: Boolean(apiTokenToSave)
+              }
+            }, { headers: corsHeaders });
+          } catch (e: any) {
+            return Response.json({ error: e?.message || "保存推理配置失败" }, { status: 500, headers: corsHeaders });
           }
         }
 
@@ -1530,7 +1640,10 @@ export default {
               ).bind(classId, maxStudents).all();
               students = results || [];
             } else {
-              return Response.json({ error: "classId 或 studentIds 至少提供一个" }, { status: 400, headers: corsHeaders });
+              const { results } = await env.DB.prepare(
+                `SELECT id, classId, name, avatarUri FROM Student ORDER BY id ASC LIMIT ?`
+              ).bind(maxStudents).all();
+              students = results || [];
             }
             if (!students.length) {
               return Response.json({ error: "未找到可处理的学生" }, { status: 404, headers: corsHeaders });
@@ -1634,7 +1747,7 @@ export default {
           }
         }
 
-        // POST /api/face/jobs/verify-batch - 批量验证（基于真实探针向量与模板余弦相似度）
+        // POST /api/face/jobs/verify-batch - 批量验证（优先显式 probes，缺失时自动走 HuggingFace 提取探针）
         if (path === "/api/face/jobs/verify-batch" && method === "POST") {
           try {
             const body = await request.json() as any;
@@ -1656,7 +1769,7 @@ export default {
             if (studentIds.length > 0) {
               const placeholders = studentIds.map(() => "?").join(", ");
               const query = `
-                SELECT s.id, s.classId, s.name, c.name AS className
+                SELECT s.id, s.classId, s.name, s.avatarUri, c.name AS className
                 FROM Student s
                 JOIN Classroom c ON c.id = s.classId
                 WHERE s.id IN (${placeholders})
@@ -1666,7 +1779,7 @@ export default {
               students = results || [];
             } else if (classId > 0) {
               const { results } = await env.DB.prepare(
-                `SELECT s.id, s.classId, s.name, c.name AS className
+                `SELECT s.id, s.classId, s.name, s.avatarUri, c.name AS className
                  FROM Student s
                  JOIN Classroom c ON c.id = s.classId
                  WHERE s.classId = ?
@@ -1675,10 +1788,38 @@ export default {
               ).bind(classId, maxStudents).all();
               students = results || [];
             } else {
-              return Response.json({ error: "classId 或 studentIds 至少提供一个" }, { status: 400, headers: corsHeaders });
+              const { results } = await env.DB.prepare(
+                `SELECT s.id, s.classId, s.name, s.avatarUri, c.name AS className
+                 FROM Student s
+                 JOIN Classroom c ON c.id = s.classId
+                 ORDER BY s.id ASC
+                 LIMIT ?`
+              ).bind(maxStudents).all();
+              students = results || [];
             }
             if (!students.length) {
               return Response.json({ error: "未找到可处理的学生" }, { status: 404, headers: corsHeaders });
+            }
+
+            // 对未显式提供 probes 的学生，自动使用头像走 HuggingFace 提取探针向量。
+            const inferProbeCandidates = students
+              .filter((s) => !probeMap.has(Number(s.id)))
+              .map((s) => ({ studentId: Number(s.id), avatarUri: (s.avatarUri || "").toString().trim() }))
+              .filter((s) => s.avatarUri.length > 0);
+            if (inferProbeCandidates.length > 0) {
+              const probeChunks = chunkArray(inferProbeCandidates, 24);
+              for (const chunk of probeChunks) {
+                try {
+                  const inferred = await extractEmbeddingsBatchByExternalService(env, request, chunk);
+                  for (const [sid, vector] of inferred.successMap.entries()) {
+                    if (!probeMap.has(sid) && vector.length === 128) {
+                      probeMap.set(sid, vector);
+                    }
+                  }
+                } catch {
+                  // 保持兼容：推断失败则回落到 MISSING_PROBE_VECTOR 逐条反馈
+                }
+              }
             }
 
             const details: any[] = [];

@@ -21,7 +21,7 @@ BEGIN
 END;
 
 INSERT INTO FaceInferenceService (name, baseUrl, modelVer, isActive)
-SELECT 'huggingface-mobilefacenet', 'https://your-username-mobilefacenet-server.hf.space', 'mobilefacenet.onnx', 1
+SELECT 'huggingface-mobilefacenet', 'https://gyf111-mobilefacenet-server.hf.space', 'mobilefacenet.onnx', 1
 WHERE NOT EXISTS (SELECT 1 FROM FaceInferenceService);
 
 SELECT '✅ FaceInferenceService 配置表迁移完成' AS result;
