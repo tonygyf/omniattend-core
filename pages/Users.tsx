@@ -23,7 +23,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
   const [newUserSid, setNewUserSid] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
-  const [newUserGender, setNewUserGender] = useState<'M' | 'F' | 'O' | '' >('');
+  const [newUserGender, setNewUserGender] = useState<'M' | 'F' | 'O' | ''>('');
   const [newUserAvatarUri, setNewUserAvatarUri] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
@@ -58,16 +58,13 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
     );
   }
 
-
-  const filteredUsers = users.filter(user => 
+  const filteredUsers = users.filter(user =>
     user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (user.sid && user.sid.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const handleDeleteUser = async (userId: string) => {
-    // This should call a backend API to delete the user.
-    // For now, we'll just filter the state.
-    // Example: await deleteStudent(userId);
+    // TODO: call backend delete API, e.g. await deleteStudent(userId);
     setUsers(currentUsers => currentUsers.filter(user => user.id !== userId));
   };
 
@@ -78,7 +75,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
     }
     setIsSubmitting(true);
     try {
-      await createStudent({
+      const res = await createStudent({
         name: newUserName,
         sid: newUserSid,
         email: newUserEmail || undefined,
@@ -87,10 +84,12 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
         avatarUrl: newUserAvatarUri || undefined,
         classId: classId,
       });
+      if (!res.success) {
+        throw new Error(res.error || '添加学生失败');
+      }
       toast.success('学生新增成功！');
       setIsModalOpen(false);
       loadStudents();
-      // Reset form state for next time
       setNewUserName('');
       setNewUserSid('');
       setNewUserEmail('');
@@ -116,14 +115,14 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
           <p className="text-slate-500">管理该班级的学生信息。</p>
         </div>
         <div className="flex items-center gap-2">
-          <button 
+          <button
             onClick={() => setIsBatchModalOpen(true)}
             className="flex items-center gap-2 bg-white text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-50 transition-colors shadow-sm border"
           >
             <Upload size={18} />
             <span>批量导入</span>
           </button>
-          <button 
+          <button
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
@@ -133,14 +132,13 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
         </div>
       </div>
 
-      {/* ... [rest of the component remains largely the same] ... */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="按姓名或学号搜索..." 
+            <input
+              type="text"
+              placeholder="按姓名或学号搜索..."
               className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -159,12 +157,12 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                 <tr><td colSpan={4} className="px-6 py-8 text-center">Loading...</td></tr>
+                <tr><td colSpan={4} className="px-6 py-8 text-center">Loading...</td></tr>
               ) : (
                 <AnimatePresence>
                   {filteredUsers.map((user) => (
-                    <motion.tr 
-                      key={user.id} 
+                    <motion.tr
+                      key={user.id}
                       layout
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
@@ -174,9 +172,9 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <img 
-                            src={user.avatarUrl ? getFullImageUrl(user.avatarUrl) : (`https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=0D8ABC&color=fff`)} 
-                            alt={user.name} 
+                          <img
+                            src={user.avatarUrl ? getFullImageUrl(user.avatarUrl) : (`https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=0D8ABC&color=fff`)}
+                            alt={user.name}
                             className="w-10 h-10 rounded-full object-cover border"
                           />
                           <div>
@@ -191,7 +189,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                        <button 
+                        <button
                           onClick={() => handleDeleteUser(user.id)}
                           className="text-slate-400 hover:text-red-600 p-1 rounded-full hover:bg-red-100/50"
                         >
@@ -255,7 +253,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
       </Modal>
 
       {isBatchModalOpen && (
-        <BatchImportModal 
+        <BatchImportModal
           classId={classId}
           onClose={() => setIsBatchModalOpen(false)}
           onSuccess={() => {
@@ -268,8 +266,7 @@ const UsersPage: React.FC<UsersPageProps> = ({ classId, className, onNavigateBac
   );
 };
 
-// Batch Import Modal Component
-const BatchImportModal: React.FC<{ classId: number, onClose: () => void, onSuccess: () => void }> = ({ classId, onClose, onSuccess }) => {
+const BatchImportModal: React.FC<{ classId: number; onClose: () => void; onSuccess: () => void }> = ({ classId, onClose, onSuccess }) => {
   const [file, setFile] = useState<File | null>(null);
   const [parsedData, setParsedData] = useState<any[]>([]);
   const [isParsing, setIsParsing] = useState(false);
@@ -297,7 +294,7 @@ const BatchImportModal: React.FC<{ classId: number, onClose: () => void, onSucce
 
   const handleSubmit = async () => {
     if (parsedData.length === 0) {
-      toast.error("没有可导入的数据。");
+      toast.error('没有可导入的数据。');
       return;
     }
     setIsSubmitting(true);
@@ -312,7 +309,7 @@ const BatchImportModal: React.FC<{ classId: number, onClose: () => void, onSucce
   };
 
   return (
-    <Modal open={true} onClose={onClose} title={`批量导入学生到班级`}>
+    <Modal open={true} onClose={onClose} title="批量导入学生到班级">
       <div className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-slate-600 mb-2">
@@ -321,11 +318,12 @@ const BatchImportModal: React.FC<{ classId: number, onClose: () => void, onSucce
           <p className="text-xs text-slate-500 mb-2">
             文件第一行应为表头，至少包含 <code className="bg-slate-100 px-1 rounded">name</code> 和 <code className="bg-slate-100 px-1 rounded">sid</code> 字段。
           </p>
-          <input 
-            type="file" 
+          <input
+            type="file"
             accept=".csv,.txt"
             onChange={handleFileChange}
-            className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+            className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+          />
         </div>
 
         {isParsing && <p>正在解析文件...</p>}
@@ -351,13 +349,17 @@ const BatchImportModal: React.FC<{ classId: number, onClose: () => void, onSucce
         )}
 
         <div className="flex justify-end pt-2">
-          <button onClick={handleSubmit} disabled={isParsing || isSubmitting || parsedData.length === 0} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:bg-blue-400">
+          <button
+            onClick={handleSubmit}
+            disabled={isParsing || isSubmitting || parsedData.length === 0}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:bg-blue-400"
+          >
             {isSubmitting ? '正在导入...' : `确认导入 ${parsedData.length} 名学生`}
           </button>
         </div>
       </div>
     </Modal>
-  )
-}
+  );
+};
 
 export default UsersPage;

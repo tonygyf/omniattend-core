@@ -5,6 +5,7 @@ import Modal from '../components/Modal';
 import { fetchClassrooms, fetchAllStudents, createClassroom, updateClassroom, deleteClassroom } from '../services/dataService';
 import { Classroom, User } from '../types';
 import { useAuth } from '../context/AuthContext';
+import toast from 'react-hot-toast';
 
 interface ClassroomPageProps {
   onNavigateToClass: (id: number, name: string) => void;
@@ -77,48 +78,59 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
 
   const handleSubmitClass = async () => {
     if (!newClassName.trim()) {
-      alert('班级名称不能为空。');
+      toast.error('班级名称不能为空。');
       return;
     }
     if (!auth.user?.id || Number.isNaN(Number(auth.user.id))) {
-      alert('当前账号无有效教师 ID，无法保存班级。');
+      toast.error('当前账号无有效教师 ID，无法保存班级。');
       return;
     }
     setIsSubmitting(true);
     
     let result;
-    if (editingClassroomId) {
-      result = await updateClassroom(editingClassroomId, {
-        name: newClassName,
-        year: newClassYear,
-      });
-    } else {
-      result = await createClassroom({
-        name: newClassName,
-        year: newClassYear,
-        teacherId: Number(auth.user.id),
-      });
-    }
+    try {
+      if (editingClassroomId) {
+        result = await updateClassroom(editingClassroomId, {
+          name: newClassName,
+          year: newClassYear,
+        });
+      } else {
+        result = await createClassroom({
+          name: newClassName,
+          year: newClassYear,
+          teacherId: Number(auth.user.id),
+        });
+      }
 
-    if (result.success) {
-      await loadClassrooms();
-      setIsModalOpen(false);
-      setEditingClassroomId(null);
-      setNewClassName('');
-      setNewClassYear(new Date().getFullYear());
-    } else {
-      alert(`保存失败: ${result.error}`);
+      if (result.success) {
+        toast.success(editingClassroomId ? '班级修改成功！' : '班级创建成功！');
+        await loadClassrooms();
+        setIsModalOpen(false);
+        setEditingClassroomId(null);
+        setNewClassName('');
+        setNewClassYear(new Date().getFullYear());
+      } else {
+        toast.error(`保存失败: ${result.error}`);
+      }
+    } catch (err: any) {
+      toast.error(`保存失败: ${err.message || '未知错误'}`);
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   };
 
   const handleDeleteClass = async (classId: number) => {
     if (window.confirm('确定要删除此班级吗？删除后将无法恢复。')) {
-      const result = await deleteClassroom(classId);
-      if (result.success) {
-        setClassrooms(prev => prev.filter(c => c.id !== classId));
-      } else {
-        alert(`删除失败: ${result.error}`);
+      try {
+        const result = await deleteClassroom(classId);
+        if (result.success) {
+          toast.success('班级删除成功！');
+          setClassrooms(prev => prev.filter(c => c.id !== classId));
+        } else {
+          toast.error(`删除失败: ${result.error}`);
+        }
+      } catch (err: any) {
+        toast.error(`删除失败: ${err.message || '未知错误'}`);
       }
     }
   };

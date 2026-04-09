@@ -1361,14 +1361,15 @@ export default {
           let studentId = body.id;
           if (body.id) {
              await env.DB.prepare(`
-               INSERT OR REPLACE INTO Student (id, classId, name, sid, gender, avatarUri)
-               VALUES (?, ?, ?, ?, ?, ?)
-             `).bind(body.id, body.classId, body.name, body.sid, body.gender, body.avatarUri).run();
+               UPDATE Student 
+               SET name = ?, sid = ?, email = ?, password = ?, gender = ?, avatarUri = COALESCE(?, avatarUri), classId = ?, updatedAt = CURRENT_TIMESTAMP
+               WHERE id = ?
+             `).bind(body.name, body.sid, body.email || null, body.password || null, body.gender || null, body.avatarUrl || null, body.classId, body.id).run();
           } else {
              const studentRes = await env.DB.prepare(`
                INSERT INTO Student (classId, name, sid, email, password, gender, avatarUri)
                VALUES (?, ?, ?, ?, ?, ?, ?)
-             `).bind(body.classId, body.name, body.sid, body.email || null, body.password || null, body.gender || null, body.avatarUri || null).run();
+             `).bind(body.classId, body.name, body.sid, body.email || null, body.password || null, body.gender || null, body.avatarUrl || null).run();
              studentId = studentRes.meta.last_row_id;
           }
 
@@ -1531,6 +1532,30 @@ export default {
            } catch (e: any) {
              return Response.json({ error: e.message }, { status: 400, headers: corsHeaders });
            }
+        }
+
+        // DELETE /api/face/embeddings - 清空人脸特征
+        if (path === "/api/face/embeddings" && method === "DELETE") {
+          try {
+            const body = await request.json() as any;
+            const studentId = Number(body.studentId || 0);
+            const classId = Number(body.classId || 0);
+
+            if (studentId > 0) {
+              await env.DB.prepare("DELETE FROM FaceEmbedding WHERE studentId = ?").bind(studentId).run();
+              return Response.json({ ok: true, message: `已清空学生 ${studentId} 的人脸特征` }, { headers: corsHeaders });
+            } else if (classId > 0) {
+              await env.DB.prepare(`
+                DELETE FROM FaceEmbedding 
+                WHERE studentId IN (SELECT id FROM Student WHERE classId = ?)
+              `).bind(classId).run();
+              return Response.json({ ok: true, message: `已清空班级 ${classId} 的所有人脸特征` }, { headers: corsHeaders });
+            } else {
+              return Response.json({ error: "studentId or classId required" }, { status: 400, headers: corsHeaders });
+            }
+          } catch (e: any) {
+            return Response.json({ error: e.message }, { status: 500, headers: corsHeaders });
+          }
         }
 
         // GET /api/face/templates/summary - 人脸模板汇总（学生维度）

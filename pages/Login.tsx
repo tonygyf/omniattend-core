@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { loginAdmin, sendEmailVerificationCode, verifyEmailCode } from '../services/authService';
 import { Lock, Mail, Loader2, ArrowRight, Zap, Clock, Eye, EyeOff } from 'lucide-react';
 import { AuthBackground } from '../components/AuthBackground';
+import toast from 'react-hot-toast';
 
 interface LoginProps {
   onNavigateRegister: () => void;
@@ -51,6 +52,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
 
     const res = await loginAdmin(e, p);
     if (res.success && res.data) {
+      toast.success('登录成功');
       login({ ...res.data, id: Number(res.data.id) });
       if (remember) {
         try {
@@ -63,6 +65,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
       }
     } else {
       setError(res.error || 'Invalid credentials');
+      toast.error(res.error || '登录失败，请检查账号密码');
       setLoading(false);
     }
   };
@@ -80,6 +83,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
 
     const res = await sendEmailVerificationCode(codeEmail);
     if (res.success) {
+      toast.success('验证码已发送，请查收');
       setCodeSent(true);
       setCodeCountdown(60); // 60 seconds countdown
       // Start countdown
@@ -94,6 +98,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
       }, 1000);
     } else {
       setCodeError(res.error || 'Failed to send verification code');
+      toast.error(res.error || '验证码发送失败');
     }
     setCodeSending(false);
   };
@@ -106,9 +111,11 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
 
     const res = await verifyEmailCode(codeEmail, verificationCode);
     if (res.success && res.data) {
+      toast.success('验证码登录成功');
       login({ ...res.data, id: Number(res.data.id) });
     } else {
       setCodeError(res.error || 'Invalid verification code');
+      toast.error(res.error || '验证码错误');
       setCodeLoading(false);
     }
   };

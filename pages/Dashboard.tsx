@@ -14,6 +14,7 @@ import { fetchDashboardStats, syncDataWithCloudflare } from '../services/dataSer
 import { DashboardStats } from '../types';
 import ErrorBoundary from '../components/ErrorBoundary';
 import ClientOnly from '../components/ClientOnly';
+import toast from 'react-hot-toast';
 
 type StatsRange = 'day' | 'month' | 'year' | 'all';
 
@@ -58,9 +59,15 @@ const Dashboard: React.FC = () => {
 
   const handleSync = async () => {
     setSyncing(true);
-    await syncDataWithCloudflare();
-    await loadStats(true); // Reload stats after sync
-    setSyncing(false);
+    try {
+      await syncDataWithCloudflare();
+      await loadStats(true); // Reload stats after sync
+      toast.success('数据同步成功！');
+    } catch (error: any) {
+      toast.error(error.message || '数据同步失败');
+    } finally {
+      setSyncing(false);
+    }
   }
 
   if (loading) {

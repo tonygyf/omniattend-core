@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Moon, Sun, Database, Server, Smartphone, Copy, Check } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const API_BASE_URL = 'https://omni.gyf123.dpdns.org';
 const API_KEY = 'my-secret-api-key';
@@ -34,9 +35,12 @@ const SettingsPage: React.FC = () => {
         if (res.ok) {
           const data = await res.json();
           setHealthData(data);
+        } else {
+          toast.error(`系统状态检查失败: HTTP ${res.status}`);
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error("Health check failed", e);
+        toast.error(e.message || "系统状态检查失败，请检查网络连接");
       } finally {
         setLoadingHealth(false);
       }
@@ -47,9 +51,14 @@ const SettingsPage: React.FC = () => {
   const apiBaseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://your-worker-url.workers.dev';
 
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(apiBaseUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard.writeText(apiBaseUrl).then(() => {
+      setCopied(true);
+      toast.success('地址已复制到剪贴板');
+      setTimeout(() => setCopied(false), 2000);
+    }).catch((err) => {
+      toast.error('复制失败');
+      console.error(err);
+    });
   };
 
   const getDbStatus = () => {

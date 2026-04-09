@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { registerAdmin } from '../services/authService';
 import { Lock, Mail, Loader2, UserPlus } from 'lucide-react';
 import { AuthBackground } from '../components/AuthBackground';
+import toast from 'react-hot-toast';
 
 interface RegisterProps {
   onNavigateLogin: () => void;
@@ -22,11 +23,13 @@ const Register: React.FC<RegisterProps> = ({ onNavigateLogin }) => {
 
     if (password !== confirmPass) {
       setError("Passwords don't match");
+      toast.error("两次输入的密码不一致");
       return;
     }
     
     if (password.length < 6) {
         setError("Password must be at least 6 characters");
+        toast.error("密码长度至少需要 6 个字符");
         return;
     }
 
@@ -34,11 +37,13 @@ const Register: React.FC<RegisterProps> = ({ onNavigateLogin }) => {
 
     const res = await registerAdmin(email, password);
     if (res.success && res.data) {
+      toast.success('注册成功');
       // Auto login after register
       // Note: In real app, might want email verification first
       login({ ...res.data, id: Number(res.data.id), token: 'temp-token' }); 
     } else {
       setError(res.error || 'Registration failed');
+      toast.error(res.error || '注册失败');
     }
     setLoading(false);
   };

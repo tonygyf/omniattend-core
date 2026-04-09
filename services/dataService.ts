@@ -622,3 +622,24 @@ export const saveFaceInferenceConfig = async (payload: {
     return { success: false, error: '网络错误' };
   }
 };
+
+export const clearFaceEmbeddings = async (payload: { studentId?: number; classId?: number }): Promise<{ success: boolean; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号不可执行此操作' };
+  }
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/face/embeddings`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+      body: JSON.stringify(payload)
+    });
+    const json: any = await res.json();
+    if (!res.ok) {
+      return { success: false, error: json?.error || '清空失败' };
+    }
+    return { success: true };
+  } catch (e) {
+    console.error('Clear face embeddings error:', e);
+    return { success: false, error: '网络错误' };
+  }
+};

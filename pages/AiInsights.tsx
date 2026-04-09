@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { fetchClassrooms, fetchFaceTemplateSummary, enrollFaceBatch, fetchFaceModelStatus, fetchFaceInferenceConfig, saveFaceInferenceConfig } from '../services/dataService';
+import { fetchClassrooms, fetchFaceTemplateSummary, enrollFaceBatch, fetchFaceModelStatus, fetchFaceInferenceConfig, saveFaceInferenceConfig, clearFaceEmbeddings } from '../services/dataService';
 import { Classroom, FaceTemplateSummaryItem, FaceModelStatus, FaceInferenceServiceConfig } from '../types';
 import { useAuth } from '../context/AuthContext';
 import { Loader2, AlertTriangle, Sparkles, Bot, HelpCircle, List, Users, ChevronDown, ChevronUp } from 'lucide-react';
@@ -154,7 +154,7 @@ const AiInsightsPage: React.FC = () => {
       return;
     }
     if (modelStatus && !modelStatus.available) {
-      setError('当前模型不可用，请先点击“检测模型可用性”并确认模型可访问。');
+      setError('当前模型不可用，请先点击"检测模型可用性"并确认模型可访问。');
       return;
     }
     setRunningEnroll(true);
@@ -197,6 +197,45 @@ const AiInsightsPage: React.FC = () => {
     }
   };
 
+  const handleClearClassFaceData = async () => {
+    if (selectedClassId <= 0) {
+      toast.error('请先选择要清空数据的班级。');
+      return;
+    }
+    if (!window.confirm('确定要清空该班级所有人脸特征向量吗？操作不可逆。')) {
+      return;
+    }
+    try {
+      const result = await clearFaceEmbeddings({ classId: selectedClassId });
+      if (result.success) {
+        toast.success('已清空该班级人脸特征');
+        await loadData();
+      } else {
+        toast.error(result.error || '清空失败');
+      }
+    } catch (e: any) {
+      toast.error(e.message || '网络错误');
+    }
+  };
+
+  const handleClearStudentFaceData = async (studentId: number) => {
+    if (!window.confirm('确定要清空该学生的人脸特征向量吗？')) {
+      return;
+    }
+    try {
+      const result = await clearFaceEmbeddings({ studentId });
+      if (result.success) {
+        toast.success('已清空该学生人脸特征');
+        await loadData();
+      } else {
+        toast.error(result.error || '清空失败');
+      }
+    } catch (e: any) {
+      toast.error(e.message || '网络错误');
+    }
+  };
+
+  // ✅ 修复：补回缺失的函数声明头
   const handleSaveInferenceConfig = async () => {
     const baseUrl = configBaseUrl.trim().replace(/\/+$/, '');
     const model = configModelVer.trim() || 'mobilefacenet.onnx';
@@ -403,6 +442,18 @@ const AiInsightsPage: React.FC = () => {
                       {checkingModel ? '检测中...' : '检测推理中心'}
                     </button>
                   </div>
+                  
+                  {selectedClassId > 0 && (
+                    <div className="flex flex-wrap items-center gap-3 mb-4">
+                      <button
+                        onClick={handleClearClassFaceData}
+                        disabled={loading}
+                        className="flex-1 flex items-center justify-center gap-2 bg-red-500/20 text-red-100 px-4 py-2 rounded-lg hover:bg-red-500/30 border border-red-500/30 transition-colors disabled:opacity-50 text-sm font-medium"
+                      >
+                        清空该班级特征向量
+                      </button>
+                    </div>
+                  )}
 
                   {enrollMessage && <div className="text-xs bg-white/15 px-3 py-2 rounded-lg mb-4">{enrollMessage}</div>}
 
@@ -565,7 +616,7 @@ const AiInsightsPage: React.FC = () => {
             正在加载数据...
           </div>
         ) : viewMode === 'student' ? (
-          <StudentDetailView analysis={sortedTemplates} requestSort={requestSort} />
+          <StudentDetailView analysis={sortedTemplates} requestSort={requestSort} onClearStudent={handleClearStudentFaceData} />
         ) : (
           <ClassSummaryView analysis={classSummary} />
         )}
@@ -581,7 +632,8 @@ export default AiInsightsPage;
 const StudentDetailView: React.FC<{
   analysis: FaceTemplateSummaryItem[];
   requestSort: (key: SortKey) => void;
-}> = ({ analysis, requestSort }) => (
+  onClearStudent: (studentId: number) => void;
+}> = ({ analysis, requestSort, onClearStudent }) => (
   <div className="overflow-x-auto max-h-[500px]">
     <table className="w-full text-left text-sm">
       <thead className="bg-slate-50 text-slate-500 sticky top-0 z-10">
@@ -593,6 +645,7 @@ const StudentDetailView: React.FC<{
           <th className="px-6 py-4 font-semibold cursor-pointer" onClick={() => requestSort('latestQuality')}>最新质量</th>
           <th className="px-6 py-4 font-semibold">模型版本</th>
           <th className="px-6 py-4 font-semibold">最近更新时间</th>
+          <th className="px-6 py-4 font-semibold text-right">操作</th>
         </tr>
       </thead>
       <tbody className="divide-y divide-slate-100">
@@ -606,6 +659,16 @@ const StudentDetailView: React.FC<{
               <td className="px-6 py-4">{Number(student.latestQuality || 0).toFixed(3)}</td>
               <td className="px-6 py-4">{student.modelVer || '-'}</td>
               <td className="px-6 py-4">{student.lastUpdatedAt || '-'}</td>
+              <td className="px-6 py-4 text-right">
+                {student.templateCount > 0 && (
+                  <button
+                    onClick={() => onClearStudent(student.studentId)}
+                    className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded transition-colors text-xs"
+                  >
+                    清空
+                  </button>
+                )}
+              </td>
             </motion.tr>
           ))}
         </AnimatePresence>
@@ -658,16 +721,16 @@ const HelpModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen,
         <h4 className="font-semibold text-slate-800 mb-1">1. 批量提取后模板数仍是 0</h4>
         <ul className="list-disc list-inside space-y-1">
           <li>先确认所选班级下有学生数据。</li>
-          <li>确认学生已上传头像（`Student.avatarUri`）；系统默认按头像提取向量。</li>
-          <li>若头像缺失或读取失败，后端会返回 `AVATAR_NOT_SET/AVATAR_READ_FAILED`。</li>
-          <li>检查后端 `/api/face/jobs/enroll-batch` 是否返回成功。</li>
+          <li>确认学生已上传头像（Student.avatarUri）；系统默认按头像提取向量。</li>
+          <li>若头像缺失或读取失败，后端会返回 AVATAR_NOT_SET/AVATAR_READ_FAILED。</li>
+          <li>检查后端 /api/face/jobs/enroll-batch 是否返回成功。</li>
           <li>点击按钮后等待刷新完成再查看列表。</li>
         </ul>
       </div>
       <div>
         <h4 className="font-semibold text-slate-800 mb-1">2. 推理服务检测失败</h4>
         <ul className="list-disc list-inside space-y-1">
-          <li>先点击“检测HuggingFace服务可用性”确认外部推理中心在线。</li>
+          <li>先点击"检测HuggingFace服务可用性"确认外部推理中心在线。</li>
           <li>检查推理中心配置中的地址、模型版本与超时参数。</li>
           <li>若配置了 API Key，请确认密钥可用且权限正确。</li>
           <li>服务恢复后重新发起班级批量提取。</li>
@@ -676,7 +739,7 @@ const HelpModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen,
       <div>
         <h4 className="font-semibold text-slate-800 mb-1">3. 这页与签到任务关系</h4>
         <ul className="list-disc list-inside space-y-1">
-          <li>签到发布仍走 `CheckinTask`，并通过 `faceRequired/faceMinScore` 控制人脸校验。</li>
+          <li>签到发布仍走 CheckinTask，并通过 faceRequired/faceMinScore 控制人脸校验。</li>
           <li>本页只负责模板管理与模型测试，不改变签到发布入口。</li>
         </ul>
       </div>

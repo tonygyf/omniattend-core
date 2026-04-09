@@ -285,13 +285,18 @@ const CreateTaskModal: React.FC<{ onClose: () => void; onCreated: () => void; }>
         faceMinScore: constraints.face ? (task.faceMinScore ?? 0.75) : null,
       };
 
-    const result = await createCheckinTask(finalTask);
-    if (result.success) {
-      onCreated();
-    } else {
-      toast.error(result.error || '创建失败');
+    try {
+      const result = await createCheckinTask(finalTask);
+      if (result.success) {
+        onCreated();
+      } else {
+        toast.error(result.error || '创建失败');
+      }
+    } catch (error: any) {
+      toast.error(error.message || '创建失败');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
   
   return (
