@@ -1070,7 +1070,8 @@ export default {
               classId: student.classId,
               role: "student",
               accessToken: accessToken,
-              refreshToken: refreshToken
+              refreshToken: refreshToken,
+              avatarUri:student.avatarUri  // 加这一行
             }
           }, { headers: corsHeaders });
         }
