@@ -14,7 +14,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import Modal from './Modal';
 import { getFullImageUrl } from '../services/cdn';
-import { updateProfileAvatar } from '../services/authService';
+import { updateProfileAvatar, updateProfileName } from '../services/authService';
 
 interface SidebarProps {
   currentPage: string;
@@ -259,6 +259,38 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
     }
   };
 
+  const handleSaveInformation = async () => {
+    if (!user) return;
+    
+    // Check if name has changed
+    if (editName.trim() && editName.trim() !== user.name) {
+      const loadingToast = toast.loading('正在保存姓名...', { position: 'top-right' });
+      try {
+        const res = await updateProfileName(String(user.id), editName.trim());
+        if (res.success) {
+          toast.success('账户信息保存成功！', { id: loadingToast, position: 'top-right' });
+          const updated = { ...user, name: editName.trim() } as any;
+          login(updated);
+          setEditOpen(false);
+        } else {
+          toast.error(res.error || '保存姓名失败', { id: loadingToast, position: 'top-right' });
+        }
+      } catch (error: any) {
+        toast.error(error.message || '保存过程中出现错误', { id: loadingToast, position: 'top-right' });
+      }
+    } else {
+      // If only avatar path text input changed but no file selected
+      if (editAvatar.trim() !== ((user as any)?.avatarUri || '')) {
+         const updated = { ...user, avatarUri: editAvatar.trim() } as any;
+         login(updated);
+         toast.success('头像路径已更新！', { position: 'top-right' });
+      } else {
+         toast.success('已保存当前信息。', { position: 'top-right' });
+      }
+      setEditOpen(false);
+    }
+  };
+
   const remembered = (() => {
     try {
       return !!localStorage.getItem('facecheck_admin_credentials');
@@ -441,7 +473,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onNavigate, isOpen, setI
               {uploading ? '处理中...' : '上传头像'}
             </button>
             <button
-              onClick={() => { /* ... save logic ... */ setEditOpen(false); }}
+              onClick={handleSaveInformation}
               className="btn-primary"
             >
               保存信息

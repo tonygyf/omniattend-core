@@ -73,6 +73,26 @@ export const updateProfileAvatar = async (teacherId: string, file: File, key: st
   }
 };
 
+export const updateProfileName = async (teacherId: string, name: string): Promise<ApiResponse<{ id: string; name: string }>> => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/profile/name`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY
+      },
+      body: JSON.stringify({ teacherId, name })
+    });
+    const data: any = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || 'Name update failed' };
+    }
+    return { success: true, data: { id: data.data.id, name: data.data.name } };
+  } catch (error) {
+    return { success: false, error: 'Network error during name update' };
+  }
+};
+
 export const registerAdmin = async (email: string, password: string): Promise<ApiResponse<AuthResponse>> => {
   try {
     const res = await fetch(`${API_BASE_URL}/api/auth/register`, {

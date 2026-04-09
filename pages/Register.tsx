@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { registerAdmin } from '../services/authService';
 import { Lock, Mail, Loader2, UserPlus } from 'lucide-react';
+import { AuthBackground } from '../components/AuthBackground';
 
 interface RegisterProps {
   onNavigateLogin: () => void;
@@ -43,11 +44,11 @@ const Register: React.FC<RegisterProps> = ({ onNavigateLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-100 p-4">
-      <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-slate-200">
+    <AuthBackground>
+      <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md border border-slate-200">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-slate-800">Create Account</h1>
-          <p className="text-slate-500">Setup your admin access</p>
+          <h1 className="text-2xl font-bold text-slate-800">创建账户</h1>
+          <p className="text-slate-500">设置您的管理员权限</p>
         </div>
 
         {error && (
@@ -113,14 +114,14 @@ const Register: React.FC<RegisterProps> = ({ onNavigateLogin }) => {
 
         <div className="mt-8 text-center">
           <p className="text-slate-500 text-sm">
-            Already have an account?{' '}
+            已经有账户了？{' '}
             <button onClick={onNavigateLogin} className="text-blue-600 font-semibold hover:underline">
-              Sign In
+              去登录
             </button>
           </p>
         </div>
       </div>
-    </div>
+    </AuthBackground>
   );
 };
 

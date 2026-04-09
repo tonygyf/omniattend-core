@@ -315,6 +315,7 @@ export interface FaceVerifyBatchResult {
 
 export interface FaceModelStatus {
   modelVer: string;
+  modelList?: string[];
   available: boolean;
   status: number;
   source?: 'FACE_INFERENCE_SERVICE' | 'NONE';

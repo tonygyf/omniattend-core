@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, Edit, LayoutGrid, List } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '../components/Modal';
-import { fetchClassrooms, fetchAllStudents, createClassroom } from '../services/dataService';
+import { fetchClassrooms, fetchAllStudents, createClassroom, updateClassroom, deleteClassroom } from '../services/dataService';
 import { Classroom, User } from '../types';
 import { useAuth } from '../context/AuthContext';
 
@@ -22,6 +22,7 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingClassroomId, setEditingClassroomId] = useState<number | null>(null);
   const [newClassName, setNewClassName] = useState('');
   const [newClassYear, setNewClassYear] = useState(new Date().getFullYear());
 
@@ -60,35 +61,66 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
     localStorage.setItem('classroom_view_mode', viewMode);
   }, [viewMode]);
 
-  const handleAddClass = async () => {
+  const handleOpenAddModal = () => {
+    setEditingClassroomId(null);
+    setNewClassName('');
+    setNewClassYear(new Date().getFullYear());
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (classroom: Classroom) => {
+    setEditingClassroomId(classroom.id);
+    setNewClassName(classroom.name);
+    setNewClassYear(classroom.year);
+    setIsModalOpen(true);
+  };
+
+  const handleSubmitClass = async () => {
     if (!newClassName.trim()) {
       alert('班级名称不能为空。');
       return;
     }
     if (!auth.user?.id || Number.isNaN(Number(auth.user.id))) {
-      alert('当前账号无有效教师 ID，无法创建班级。');
+      alert('当前账号无有效教师 ID，无法保存班级。');
       return;
     }
     setIsSubmitting(true);
-    const result = await createClassroom({
-      name: newClassName,
-      year: newClassYear,
-      teacherId: Number(auth.user.id),
-    });
+    
+    let result;
+    if (editingClassroomId) {
+      result = await updateClassroom(editingClassroomId, {
+        name: newClassName,
+        year: newClassYear,
+      });
+    } else {
+      result = await createClassroom({
+        name: newClassName,
+        year: newClassYear,
+        teacherId: Number(auth.user.id),
+      });
+    }
 
     if (result.success) {
-      await loadClassrooms(); // Reload the list from the server
+      await loadClassrooms();
       setIsModalOpen(false);
+      setEditingClassroomId(null);
       setNewClassName('');
       setNewClassYear(new Date().getFullYear());
     } else {
-      alert(`创建失败: ${result.error}`);
+      alert(`保存失败: ${result.error}`);
     }
     setIsSubmitting(false);
   };
 
-  const handleDeleteClass = (classId: number) => {
-    setClassrooms(prev => prev.filter(c => c.id !== classId));
+  const handleDeleteClass = async (classId: number) => {
+    if (window.confirm('确定要删除此班级吗？删除后将无法恢复。')) {
+      const result = await deleteClassroom(classId);
+      if (result.success) {
+        setClassrooms(prev => prev.filter(c => c.id !== classId));
+      } else {
+        alert(`删除失败: ${result.error}`);
+      }
+    }
   };
 
   return (
@@ -110,7 +142,7 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
             </button>
           </div>
           <button 
-            onClick={() => setIsModalOpen(true)}
+            onClick={handleOpenAddModal}
             className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
           >
             <Plus size={18} />
@@ -142,7 +174,7 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
                 </div>
                 <div className="px-6 py-3 bg-slate-50/50 border-t border-slate-100 flex justify-end gap-2">
                   <button 
-                    onClick={(e) => { e.stopPropagation(); /* handle edit */ }}
+                    onClick={(e) => { e.stopPropagation(); handleOpenEditModal(classroom); }}
                     className="text-slate-400 hover:text-blue-600 p-1.5 rounded-full hover:bg-blue-100/50"
                   >
                     <Edit size={16} />
@@ -165,7 +197,7 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
       <Modal
         open={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title="新增班级"
+        title={editingClassroomId ? "编辑班级" : "新增班级"}
       >
         <div className="space-y-4">
           <div>
@@ -189,8 +221,8 @@ const ClassroomPage: React.FC<ClassroomPageProps> = ({ onNavigateToClass }) => {
             />
           </div>
           <div className="flex justify-end pt-2">
-            <button onClick={handleAddClass} disabled={isSubmitting} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:bg-blue-400">
-              {isSubmitting ? '正在提交...' : '确认新增'}
+            <button onClick={handleSubmitClass} disabled={isSubmitting} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:bg-blue-400">
+              {isSubmitting ? '正在提交...' : (editingClassroomId ? '保存修改' : '确认新增')}
             </button>
           </div>
         </div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { loginAdmin, sendEmailVerificationCode, verifyEmailCode } from '../services/authService';
 import { Lock, Mail, Loader2, ArrowRight, Zap, Clock, Eye, EyeOff } from 'lucide-react';
+import { AuthBackground } from '../components/AuthBackground';
 
 interface LoginProps {
   onNavigateRegister: () => void;
@@ -129,7 +130,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-slate-100 p-4">
+    <AuthBackground>
       <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md border border-slate-200">
         {/* Header */}
         <div className="text-center mb-8">
@@ -360,7 +361,7 @@ const Login: React.FC<LoginProps> = ({ onNavigateRegister }) => {
           </p>
         </div>
       </div>
-    </div>
+    </AuthBackground>
   );
 };
 

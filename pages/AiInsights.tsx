@@ -1,12 +1,30 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { fetchClassrooms, fetchFaceTemplateSummary, enrollFaceBatch, verifyFaceBatch, fetchFaceModelStatus, fetchFaceInferenceConfig, saveFaceInferenceConfig } from '../services/dataService';
-import { Classroom, FaceTemplateSummaryItem, FaceVerifyBatchResult, FaceModelStatus, FaceInferenceServiceConfig } from '../types';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { fetchClassrooms, fetchFaceTemplateSummary, enrollFaceBatch, fetchFaceModelStatus, fetchFaceInferenceConfig, saveFaceInferenceConfig } from '../services/dataService';
+import { Classroom, FaceTemplateSummaryItem, FaceModelStatus, FaceInferenceServiceConfig } from '../types';
 import { useAuth } from '../context/AuthContext';
-import { Loader2, AlertTriangle, Sparkles, Bot, HelpCircle, List, Users } from 'lucide-react';
+import { Loader2, AlertTriangle, Sparkles, Bot, HelpCircle, List, Users, ChevronDown, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '../components/Modal';
+import toast from 'react-hot-toast';
 
 type SortKey = keyof FaceTemplateSummaryItem | 'hasTemplate';
+
+const HERO_METEORS = [
+  { top: "-10%", left: "60%", delay: 0.1, duration: 2.2 },
+  { top: "-20%", left: "30%", delay: 1.2, duration: 1.8 },
+  { top: "5%", left: "90%", delay: 0.8, duration: 2.0 },
+  { top: "-5%", left: "110%", delay: 2.5, duration: 2.5 },
+  { top: "20%", left: "130%", delay: 0.4, duration: 2.2 },
+  { top: "-15%", left: "80%", delay: 1.8, duration: 1.9 },
+];
+const HERO_STARS = [
+  { top: "16%", left: "12%", delay: 0.0 },
+  { top: "22%", left: "78%", delay: 0.6 },
+  { top: "36%", left: "28%", delay: 1.2 },
+  { top: "48%", left: "64%", delay: 0.9 },
+  { top: "62%", left: "18%", delay: 0.3 },
+  { top: "74%", left: "82%", delay: 1.5 },
+];
 
 const AiInsightsPage: React.FC = () => {
   const [templates, setTemplates] = useState<FaceTemplateSummaryItem[]>([]);
@@ -22,13 +40,10 @@ const AiInsightsPage: React.FC = () => {
 
   const [selectedClassId, setSelectedClassId] = useState<number>(0);
   const [modelVer, setModelVer] = useState('mobilefacenet.onnx');
-  const [threshold, setThreshold] = useState(0.55);
+  const [availableModels, setAvailableModels] = useState<string[]>(['mobilefacenet.onnx']);
   const [maxStudents, setMaxStudents] = useState(50);
-  const [probeInput, setProbeInput] = useState('');
   const [runningEnroll, setRunningEnroll] = useState(false);
-  const [runningVerify, setRunningVerify] = useState(false);
   const [enrollMessage, setEnrollMessage] = useState<string | null>(null);
-  const [verifyResult, setVerifyResult] = useState<FaceVerifyBatchResult | null>(null);
   const [modelStatus, setModelStatus] = useState<FaceModelStatus | null>(null);
   const [checkingModel, setCheckingModel] = useState(false);
   const [inferenceConfig, setInferenceConfig] = useState<FaceInferenceServiceConfig | null>(null);
@@ -37,6 +52,9 @@ const AiInsightsPage: React.FC = () => {
   const [configTimeoutMs, setConfigTimeoutMs] = useState(15000);
   const [configApiToken, setConfigApiToken] = useState('');
   const [savingConfig, setSavingConfig] = useState(false);
+  const [isConfigCollapsed, setIsConfigCollapsed] = useState(true);
+  const [isHeroCollapsed, setIsHeroCollapsed] = useState(false);
+  const lastScrollYRef = useRef(0);
 
   const auth = useAuth();
 
@@ -58,25 +76,79 @@ const AiInsightsPage: React.FC = () => {
     }
   }, [selectedClassId]);
 
+  const syncAvailableModels = useCallback((status: FaceModelStatus | null, fallbackModel?: string) => {
+    const options = new Set<string>();
+    (status?.modelList || []).forEach((name) => {
+      const normalized = String(name || '').trim();
+      if (normalized) options.add(normalized);
+    });
+    const statusModel = String(status?.modelVer || '').trim();
+    if (statusModel) options.add(statusModel);
+    const fallback = String(fallbackModel || '').trim();
+    if (fallback) options.add(fallback);
+    if (!options.size) options.add('mobilefacenet.onnx');
+    const next = Array.from(options);
+    setAvailableModels(next);
+    setModelVer((prev) => {
+      const normalizedPrev = prev.trim();
+      return normalizedPrev || next[0];
+    });
+  }, []);
+
   useEffect(() => {
     if (auth.user?.id) {
       loadData();
       void (async () => {
-        const cfg = await fetchFaceInferenceConfig();
+        const [cfg, status] = await Promise.all([fetchFaceInferenceConfig(), fetchFaceModelStatus()]);
         if (cfg) {
           setInferenceConfig(cfg);
           setConfigBaseUrl(cfg.baseUrl || 'https://gyf111-mobilefacenet-server.hf.space');
           setConfigModelVer(cfg.modelVer || 'mobilefacenet.onnx');
           setConfigTimeoutMs(Number(cfg.timeoutMs || 15000));
-          setModelVer(prev => (prev.trim() ? prev : (cfg.modelVer || 'mobilefacenet.onnx')));
         }
+        setModelStatus(status);
+        syncAvailableModels(status, cfg?.modelVer || 'mobilefacenet.onnx');
       })();
     }
-  }, [auth.user?.id, loadData]);
+  }, [auth.user?.id, loadData, syncAvailableModels]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const scrollContainer = document.getElementById('main-scroll-container');
+    if (!scrollContainer) return;
+
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(() => {
+        const currentY = scrollContainer.scrollTop || 0;
+        const delta = currentY - lastScrollYRef.current;
+
+        if (currentY < 28) {
+          setIsHeroCollapsed(false);
+        } else if (delta > 4 && currentY > 90) {
+          setIsHeroCollapsed(true);
+        } else if (delta < -6) {
+          setIsHeroCollapsed(false);
+        }
+
+        lastScrollYRef.current = currentY;
+        ticking = false;
+      });
+    };
+
+    scrollContainer.addEventListener('scroll', onScroll, { passive: true });
+    return () => scrollContainer.removeEventListener('scroll', onScroll);
+  }, []);
 
   const handleEnrollBatch = async () => {
     const normalizedModelVer = modelVer.trim();
-    const normalizedMaxStudents = Math.min(200, Math.max(1, Number(maxStudents) || 1));
+    const normalizedMaxStudents = Math.min(100, Math.max(1, Number(maxStudents) || 1));
+    if (selectedClassId <= 0) {
+      setError('请先选择班级，再执行批量提取。');
+      return;
+    }
     if (!normalizedModelVer) {
       setError('模型版本不能为空。');
       return;
@@ -90,7 +162,7 @@ const AiInsightsPage: React.FC = () => {
     setEnrollMessage(null);
     try {
       const result = await enrollFaceBatch({
-        classId: selectedClassId > 0 ? selectedClassId : undefined,
+        classId: selectedClassId,
         modelVer: normalizedModelVer,
         maxStudents: normalizedMaxStudents
       });
@@ -99,7 +171,7 @@ const AiInsightsPage: React.FC = () => {
         return;
       }
       setEnrollMessage(
-        `提取完成：总计 ${result.data.totalCount}，成功 ${result.data.successCount}，失败 ${result.data.failCount}，模型 ${result.data.modelVer}`
+        `提取完成（班级ID ${selectedClassId}）：总计 ${result.data.totalCount}，成功 ${result.data.successCount}，失败 ${result.data.failCount}，模型 ${result.data.modelVer}`
       );
       await loadData();
     } catch (e: any) {
@@ -109,65 +181,17 @@ const AiInsightsPage: React.FC = () => {
     }
   };
 
-  const handleVerifyBatch = async () => {
-    const normalizedThreshold = Number(threshold);
-    const normalizedMaxStudents = Math.min(200, Math.max(1, Number(maxStudents) || 1));
-    if (!Number.isFinite(normalizedThreshold) || normalizedThreshold < 0 || normalizedThreshold > 1) {
-      setError('阈值必须在 0 到 1 之间。');
-      return;
-    }
-    if (modelStatus && !modelStatus.available) {
-      setError('当前模型不可用，请先点击“检测模型可用性”并确认模型可访问。');
-      return;
-    }
-
-    let probes: Array<{ studentId: number; vector: number[] }> = [];
-    try {
-      const parsed = JSON.parse(probeInput || '[]');
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        probes = parsed
-          .map((item: any) => ({
-            studentId: Number(item?.studentId),
-            vector: Array.isArray(item?.vector) ? item.vector.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v)) : []
-          }))
-          .filter((item: { studentId: number; vector: number[] }) => Number.isFinite(item.studentId) && item.studentId > 0 && item.vector.length === 128);
-        if (!probes.length) {
-          setError('probes 格式不正确：每项必须包含 studentId 和 128 维 vector。');
-          return;
-        }
-      }
-    } catch {
-      setError('probes JSON 解析失败，请检查格式。');
-      return;
-    }
-
-    setRunningVerify(true);
-    setError(null);
-    setVerifyResult(null);
-    try {
-      const result = await verifyFaceBatch({
-        classId: selectedClassId > 0 ? selectedClassId : undefined,
-        threshold: normalizedThreshold,
-        maxStudents: normalizedMaxStudents,
-        probes
-      });
-      if (!result.success || !result.data) {
-        setError(result.error || '批量测试失败');
-        return;
-      }
-      setVerifyResult(result.data);
-    } catch (e: any) {
-      setError(e?.message || '批量测试失败');
-    } finally {
-      setRunningVerify(false);
-    }
-  };
-
   const handleCheckModel = async () => {
     setCheckingModel(true);
     try {
       const status = await fetchFaceModelStatus();
       setModelStatus(status);
+      syncAvailableModels(status, configModelVer);
+      if (!status) {
+        toast.error('模型状态获取失败，请稍后重试。');
+      } else if (!status.available) {
+        toast.error(`模型不可用：${status.message || `HTTP ${status.status || 0}`}`);
+      }
     } finally {
       setCheckingModel(false);
     }
@@ -199,10 +223,23 @@ const AiInsightsPage: React.FC = () => {
       setModelVer(model);
       const status = await fetchFaceModelStatus();
       setModelStatus(status);
+      syncAvailableModels(status, model);
     } finally {
       setSavingConfig(false);
     }
   };
+
+  const modelOptions = useMemo(() => {
+    const merged = new Set<string>();
+    availableModels.forEach((name) => {
+      const normalized = String(name || '').trim();
+      if (normalized) merged.add(normalized);
+    });
+    const current = modelVer.trim();
+    if (current) merged.add(current);
+    if (!merged.size) merged.add('mobilefacenet.onnx');
+    return Array.from(merged);
+  }, [availableModels, modelVer]);
 
   const sortedTemplates = useMemo(() => {
     const items = [...templates];
@@ -249,164 +286,223 @@ const AiInsightsPage: React.FC = () => {
   }, [templates]);
 
   return (
-    <motion.div translate="no" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-      <div className="text-center">
-        <div className="inline-flex items-center justify-center p-3 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl shadow-lg mb-2">
-          <Sparkles className="text-white w-8 h-8" />
-        </div>
-        <h1 className="text-3xl font-bold text-slate-900">人脸特征中心</h1>
-        <p className="text-slate-500 mt-1 max-w-xl mx-auto">
-          用于管理学生人脸特征向量、批量提取模板、批量测试模型效果（通过 HuggingFace 推理中心调用默认模型 `mobilefacenet.onnx`）。
-        </p>
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white p-6 rounded-2xl shadow-lg"
+    <motion.div translate="no" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 lg:space-y-7">
+      <motion.section
+        animate={{ height: isHeroCollapsed ? 52 : 'auto' }}
+        className="relative w-full overflow-hidden shrink-0 bg-gradient-to-br from-blue-700 via-blue-600 to-cyan-500 rounded-2xl shadow-lg mb-6 pb-2"
       >
-        <div className="flex items-center gap-3 mb-3">
-          <Bot className="w-6 h-6" />
-          <h2 className="text-lg font-semibold">人脸特征任务</h2>
+        {/* Background Animation Layer */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.1),transparent_45%),radial-gradient(circle_at_80%_70%,rgba(255,255,255,0.15),transparent_50%)]" />
+          {HERO_STARS.map((star, idx) => (
+            <motion.span
+              key={`star-${idx}`}
+              className="absolute rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.8)]"
+              style={{ top: star.top, left: star.left, width: 2 + (idx % 3), height: 2 + (idx % 3) }}
+              animate={{ opacity: [0.1, 0.9, 0.1] }}
+              transition={{ duration: 1.5 + (idx % 3), delay: star.delay, repeat: Infinity, ease: "easeInOut" }}
+            />
+          ))}
+          {HERO_METEORS.map((meteor, idx) => (
+            <motion.span
+              key={`meteor-${idx}`}
+              className="absolute h-[2px] rounded-full bg-gradient-to-l from-transparent via-white/80 to-white shadow-[0_0_12px_rgba(255,255,255,1)]"
+              style={{ 
+                top: meteor.top, 
+                left: meteor.left, 
+                width: 250 + (idx * 40)
+              }}
+              initial={{ x: 0, y: 0, opacity: 0, rotate: -45 }}
+              animate={{ x: -1500, y: 1500, opacity: [0, 1, 1, 0], rotate: -45 }}
+              transition={{ duration: meteor.duration, delay: meteor.delay, repeat: Infinity, ease: "linear" }}
+            />
+          ))}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-          <select
-            className="bg-white/15 rounded-lg px-3 py-2 text-sm"
-            value={selectedClassId}
-            onChange={e => setSelectedClassId(Number(e.target.value))}
-          >
-            <option value={0}>全部班级</option>
-            {classrooms.map(c => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-          <input
-            className="bg-white/15 rounded-lg px-3 py-2 text-sm"
-            value={modelVer}
-            onChange={e => setModelVer(e.target.value)}
-            placeholder="模型版本，如 mobilefacenet.onnx"
-          />
-          <input
-            className="bg-white/15 rounded-lg px-3 py-2 text-sm"
-            type="number"
-            step={0.01}
-            min={0}
-            max={1}
-            value={threshold}
-            onChange={e => setThreshold(Number(e.target.value))}
-            placeholder="阈值 0~1"
-          />
-          <input
-            className="bg-white/15 rounded-lg px-3 py-2 text-sm"
-            type="number"
-            min={1}
-            max={200}
-            value={maxStudents}
-            onChange={e => setMaxStudents(Number(e.target.value))}
-            placeholder="最大批量人数"
-          />
-        </div>
-        <textarea
-          className="w-full bg-white/15 rounded-lg px-3 py-2 text-sm mb-4 min-h-[90px]"
-          value={probeInput}
-          onChange={e => setProbeInput(e.target.value)}
-          placeholder='可选：probes(JSON)，例如 [{"studentId":1,"vector":[0.01,...共128维]}]；留空时自动使用头像走 HuggingFace 提取探针'
-        />
-
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={handleEnrollBatch}
-            disabled={runningEnroll || loading}
-            className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
-          >
-            {runningEnroll ? <Loader2 className="animate-spin w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
-            {runningEnroll ? '提取中...' : '批量提取向量'}
-          </button>
-          <button
-            onClick={handleVerifyBatch}
-            disabled={runningVerify || loading}
-            className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
-          >
-            {runningVerify ? <Loader2 className="animate-spin w-4 h-4" /> : <Bot className="w-4 h-4" />}
-            {runningVerify ? '测试中...' : '批量验证模型'}
-          </button>
-          <button
-            onClick={handleCheckModel}
-            disabled={checkingModel || loading}
-            className="flex items-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
-          >
-            {checkingModel ? <Loader2 className="animate-spin w-4 h-4" /> : <HelpCircle className="w-4 h-4" />}
-            {checkingModel ? '检测中...' : '检测HuggingFace服务可用性'}
-          </button>
-          {enrollMessage && <span className="text-sm bg-white/15 px-3 py-2 rounded-lg">{enrollMessage}</span>}
-        </div>
-
-        {verifyResult && (
-          <div className="mt-4 text-sm bg-white/15 p-3 rounded-lg">
-            测试结果：总计 {verifyResult.totalCount}，通过 {verifyResult.successCount}，失败 {verifyResult.failCount}，平均分 {verifyResult.avgScore}
-          </div>
-        )}
-
-        {modelStatus && (
-          <div className="mt-3 text-sm bg-white/15 p-3 rounded-lg">
-            模型状态：{modelStatus.available ? '可用' : '不可用'} | 模型 {modelStatus.modelVer} | HTTP {modelStatus.status}
-            {modelStatus.endpoint ? ` | 服务 ${modelStatus.endpoint}` : ''}
-            {modelStatus.source ? ` | 来源 ${modelStatus.source}` : ''}
-            {modelStatus.configSource ? ` | 配置 ${modelStatus.configSource}` : ''}
-            {modelStatus.message ? ` | 信息 ${modelStatus.message}` : ''}
-          </div>
-        )}
-
-        <div className="mt-3 bg-white/10 p-3 rounded-lg space-y-2">
-          <div className="text-sm font-semibold">推理中心配置（默认 HuggingFace）</div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            <input
-              className="bg-white/15 rounded-lg px-3 py-2 text-sm"
-              value={configBaseUrl}
-              onChange={e => setConfigBaseUrl(e.target.value)}
-              placeholder="推理服务地址"
-            />
-            <input
-              className="bg-white/15 rounded-lg px-3 py-2 text-sm"
-              value={configModelVer}
-              onChange={e => setConfigModelVer(e.target.value)}
-              placeholder="模型版本"
-            />
-            <input
-              className="bg-white/15 rounded-lg px-3 py-2 text-sm"
-              type="number"
-              min={1000}
-              max={60000}
-              value={configTimeoutMs}
-              onChange={e => setConfigTimeoutMs(Number(e.target.value))}
-              placeholder="超时毫秒"
-            />
-          </div>
-          <input
-            className="w-full bg-white/15 rounded-lg px-3 py-2 text-sm"
-            value={configApiToken}
-            onChange={e => setConfigApiToken(e.target.value)}
-            placeholder="可选：API Key（留空则不改）"
-          />
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            <button
-              onClick={handleSaveInferenceConfig}
-              disabled={savingConfig || loading}
-              className="bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50"
+        {/* Expanded Content */}
+        <AnimatePresence>
+          {!isHeroCollapsed && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="relative z-10 px-6 pt-8 pb-10 text-white flex flex-col"
             >
-              {savingConfig ? '保存中...' : '保存推理配置'}
-            </button>
-            {inferenceConfig ? (
-              <span>当前来源 {inferenceConfig.source} | 已配置密钥 {inferenceConfig.hasApiKey ? '是' : '否'}</span>
-            ) : null}
-          </div>
-        </div>
+              <div className="flex flex-col md:flex-row gap-8 items-start">
+                <div className="flex-1">
+                  <div className="inline-flex items-center justify-center p-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl shadow-lg mb-3">
+                    <Sparkles className="text-white w-6 h-6" />
+                  </div>
+                  <div className="text-xs font-bold tracking-widest text-cyan-100 mb-2">
+                    FACE VECTOR WORKSPACE
+                  </div>
+                  <h1 className="text-3xl font-extrabold tracking-tight mb-3 drop-shadow-md">
+                    人脸特征中心
+                  </h1>
+                  <p className="text-sm text-blue-50 max-w-lg leading-relaxed mb-6">
+                    用于管理学生人脸特征向量，提供班级维度批量提取、服务可用性检测与推理中心配置。
+                  </p>
+                </div>
 
-        {error && <div className="bg-red-800/50 p-3 rounded-lg text-sm mt-4">{error}</div>}
-      </motion.div>
+                <div className="w-full md:w-[500px] bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-5 shadow-inner">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Bot className="w-5 h-5 text-white" />
+                    <h2 className="text-base font-bold tracking-wide">特征提取任务</h2>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                    <select
+                      className="bg-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/30 [&>option]:text-slate-800"
+                      value={selectedClassId}
+                      onChange={e => setSelectedClassId(Number(e.target.value))}
+                    >
+                      <option value={0}>请选择班级</option>
+                      {classrooms.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    {modelOptions.length > 0 ? (
+                      <select
+                        className="bg-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/30 [&>option]:text-slate-800"
+                        value={modelVer}
+                        onChange={e => setModelVer(e.target.value)}
+                      >
+                        {modelOptions.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        className="bg-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
+                        value={modelVer}
+                        onChange={e => setModelVer(e.target.value)}
+                        placeholder="模型版本"
+                      />
+                    )}
+                  </div>
+                  
+                  <div className="flex flex-wrap items-center gap-3 mb-4">
+                    <button
+                      onClick={handleEnrollBatch}
+                      disabled={runningEnroll || loading}
+                      className="flex-1 flex items-center justify-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50 text-sm font-medium"
+                    >
+                      {runningEnroll ? <Loader2 className="animate-spin w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+                      {runningEnroll ? '提取中...' : '批量提取向量'}
+                    </button>
+                    <button
+                      onClick={handleCheckModel}
+                      disabled={checkingModel || loading}
+                      className="flex-1 flex items-center justify-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50 text-sm font-medium"
+                    >
+                      {checkingModel ? <Loader2 className="animate-spin w-4 h-4" /> : <HelpCircle className="w-4 h-4" />}
+                      {checkingModel ? '检测中...' : '检测推理中心'}
+                    </button>
+                  </div>
+
+                  {enrollMessage && <div className="text-xs bg-white/15 px-3 py-2 rounded-lg mb-4">{enrollMessage}</div>}
+
+                  <div className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
+                    <button
+                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold hover:bg-white/10 transition-colors"
+                      onClick={() => setIsConfigCollapsed(prev => !prev)}
+                    >
+                      <span>高级配置</span>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${isConfigCollapsed ? '' : 'rotate-180'}`} />
+                    </button>
+                    <AnimatePresence>
+                      {!isConfigCollapsed && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="px-3 pb-3"
+                        >
+                          <div className="space-y-2 mt-2">
+                            <input
+                              className="w-full bg-white/15 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
+                              value={configBaseUrl}
+                              onChange={e => setConfigBaseUrl(e.target.value)}
+                              placeholder="推理服务地址"
+                            />
+                            <div className="grid grid-cols-2 gap-2">
+                              <input
+                                className="bg-white/15 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                value={configModelVer}
+                                onChange={e => setConfigModelVer(e.target.value)}
+                                placeholder="默认模型版本"
+                              />
+                              <input
+                                className="bg-white/15 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                type="number"
+                                min={1000}
+                                max={60000}
+                                value={configTimeoutMs}
+                                onChange={e => setConfigTimeoutMs(Number(e.target.value))}
+                                placeholder="超时毫秒"
+                              />
+                            </div>
+                            <input
+                              className="w-full bg-white/15 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
+                              value={configApiToken}
+                              onChange={e => setConfigApiToken(e.target.value)}
+                              placeholder="API Key（留空则不改）"
+                              type="password"
+                            />
+                            <button
+                              onClick={handleSaveInferenceConfig}
+                              disabled={savingConfig || loading}
+                              className="w-full bg-white/20 px-4 py-1.5 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50 text-xs font-medium"
+                            >
+                              {savingConfig ? '保存中...' : '保存配置'}
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              </div>
+
+              {error && <div className="bg-red-500/80 backdrop-blur-sm p-3 rounded-lg text-sm mt-4 border border-red-400">{error}</div>}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Collapsed Content */}
+        <AnimatePresence>
+          {isHeroCollapsed && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none pb-3"
+            >
+              <span className="text-white font-bold tracking-widest text-sm flex items-center gap-2 drop-shadow-md">
+                <Sparkles size={16} className="text-cyan-200" /> 人脸特征中心
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Toggle Button */}
+        <div className={`absolute left-0 right-0 z-20 flex justify-center pointer-events-none ${isHeroCollapsed ? 'bottom-0' : 'bottom-1'}`}>
+          <button
+            onClick={() => setIsHeroCollapsed(!isHeroCollapsed)}
+            className={`pointer-events-auto transition-colors bg-transparent flex items-center justify-center ${
+              isHeroCollapsed 
+                ? 'text-white/80 hover:text-white pb-1 pt-2 px-8' 
+                : 'p-1 text-white/50 hover:text-white rounded-full'
+            }`}
+          >
+            {isHeroCollapsed ? <ChevronDown size={20} /> : <ChevronUp size={18} />}
+          </button>
+        </div>
+      </motion.section>
 
       <AnimatePresence>
         {riskStudents.length > 0 && (
@@ -569,13 +665,12 @@ const HelpModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen,
         </ul>
       </div>
       <div>
-        <h4 className="font-semibold text-slate-800 mb-1">2. 批量测试失败率高</h4>
+        <h4 className="font-semibold text-slate-800 mb-1">2. 推理服务检测失败</h4>
         <ul className="list-disc list-inside space-y-1">
-          <li>可不填 probes，系统会自动使用学生头像经 HuggingFace 提取探针向量。</li>
-          <li>若手动提供 probes，需为 JSON 数组且每个 `vector` 为 128 维。</li>
-          <li>若学生无头像且未手动提供 probes，后端会返回 `MISSING_PROBE_VECTOR`。</li>
-          <li>先检查模板质量分布，建议质量低于 0.75 的先重提取。</li>
-          <li>适当降低阈值（例如从 0.8 调到 0.75）观察变化。</li>
+          <li>先点击“检测HuggingFace服务可用性”确认外部推理中心在线。</li>
+          <li>检查推理中心配置中的地址、模型版本与超时参数。</li>
+          <li>若配置了 API Key，请确认密钥可用且权限正确。</li>
+          <li>服务恢复后重新发起班级批量提取。</li>
         </ul>
       </div>
       <div>

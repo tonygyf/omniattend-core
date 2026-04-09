@@ -120,6 +120,7 @@ type FaceInferenceConfig = {
 
 const DEFAULT_FACE_INFER_BASE_URL = "https://gyf111-mobilefacenet-server.hf.space";
 const PLACEHOLDER_FACE_INFER_BASE_URL = "https://your-username-mobilefacenet-server.hf.space";
+const FACE_INFER_BATCH_CHUNK_SIZE = 100;
 
 function normalizeObjectKey(rawPath: string): string {
   return (rawPath || "").replace(/^\/+/, "").trim();
@@ -181,6 +182,38 @@ async function getFaceInferenceConfig(env: Env): Promise<FaceInferenceConfig> {
     modelVer: "mobilefacenet.onnx",
     source: "DEFAULT"
   };
+}
+
+function normalizeModelList(input: any): string[] {
+  if (!Array.isArray(input)) return [];
+  const list = input
+    .map((v) => (v == null ? "" : String(v).trim()))
+    .filter((v) => v.length > 0);
+  return Array.from(new Set(list));
+}
+
+async function fetchInferenceModelList(cfg: FaceInferenceConfig): Promise<string[]> {
+  const headers: Record<string, string> = {};
+  if (cfg.apiKey) headers["X-API-Key"] = cfg.apiKey;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("MODEL_LIST_TIMEOUT"), Math.min(cfg.timeoutMs, 10000));
+  try {
+    const resp = await fetch(`${cfg.baseUrl}/models`, {
+      method: "GET",
+      headers,
+      signal: controller.signal
+    });
+    if (!resp.ok) return [];
+    const payload = await resp.json<any>().catch(() => null);
+    const modelList = normalizeModelList(payload?.models);
+    if (modelList.length) return modelList;
+    const active = (payload?.activeModelVer || "").toString().trim();
+    return active ? [active] : [];
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function warmupFaceInferenceService(env: Env): Promise<void> {
@@ -1416,6 +1449,47 @@ export default {
           return Response.json({ ok: true }, { headers: corsHeaders });
         }
 
+        // PUT /api/classrooms/:id
+        // Updates an existing classroom.
+        if (path.startsWith("/api/classrooms/") && method === "PUT") {
+          const parts = path.split("/");
+          const idStr = parts[parts.length - 1];
+          const classId = parseInt(idStr, 10);
+          
+          if (isNaN(classId)) {
+            return Response.json({ error: "Invalid classroom ID" }, { status: 400, headers: corsHeaders });
+          }
+
+          const body = await request.json() as any;
+          if (!body.name || !body.year) {
+             return Response.json({ error: "Missing required fields" }, { status: 400, headers: corsHeaders });
+          }
+
+          await env.DB.prepare("UPDATE Classroom SET name = ?, year = ? WHERE id = ?")
+            .bind(body.name, body.year, classId).run();
+          
+          return Response.json({ ok: true }, { headers: corsHeaders });
+        }
+
+        // DELETE /api/classrooms/:id
+        // Deletes an existing classroom.
+        if (path.startsWith("/api/classrooms/") && method === "DELETE") {
+          const parts = path.split("/");
+          const idStr = parts[parts.length - 1];
+          const classId = parseInt(idStr, 10);
+          
+          if (isNaN(classId)) {
+            return Response.json({ error: "Invalid classroom ID" }, { status: 400, headers: corsHeaders });
+          }
+
+          // In a real app, you might want to check for foreign key constraints 
+          // or do a soft delete. Here we do a hard delete for simplicity.
+          await env.DB.prepare("DELETE FROM Classroom WHERE id = ?")
+            .bind(classId).run();
+          
+          return Response.json({ ok: true }, { headers: corsHeaders });
+        }
+
         // --- ATTENDANCE SESSIONS ---
 
         // GET /api/attendance/sessions
@@ -1472,7 +1546,7 @@ export default {
                 s.name AS studentName,
                 s.sid AS studentSid,
                 s.classId AS classId,
-                c.name AS className,
+                COALESCE(c.name, '未分班') AS className,
                 COUNT(fe.id) AS templateCount,
                 MAX(fe.createdAt) AS lastUpdatedAt,
                 MAX(COALESCE(fe.quality, 0)) AS latestQuality,
@@ -1484,7 +1558,7 @@ export default {
                   LIMIT 1
                 ) AS modelVer
               FROM Student s
-              JOIN Classroom c ON c.id = s.classId
+              LEFT JOIN Classroom c ON c.id = s.classId
               LEFT JOIN FaceEmbedding fe ON fe.studentId = s.id
               ${classFilter}
               GROUP BY s.id, s.name, s.sid, s.classId, c.name
@@ -1502,13 +1576,25 @@ export default {
         if (path === "/api/face/model/status" && method === "GET") {
           try {
             const cfg = await getFaceInferenceConfig(env);
-            const healthResp = await fetch(`${cfg.baseUrl}/health`, { method: "GET" });
+            const headers: Record<string, string> = {};
+            if (cfg.apiKey) headers["X-API-Key"] = cfg.apiKey;
+            const healthResp = await fetch(`${cfg.baseUrl}/health`, { method: "GET", headers });
             const healthText = await healthResp.text();
+            let healthPayload: any = null;
+            try {
+              healthPayload = JSON.parse(healthText);
+            } catch {
+              healthPayload = null;
+            }
+            const modelsFromHealth = normalizeModelList(healthPayload?.models);
+            const models = modelsFromHealth.length ? modelsFromHealth : await fetchInferenceModelList(cfg);
+            const activeModelVer = (healthPayload?.activeModelVer || healthPayload?.modelVer || cfg.modelVer || "mobilefacenet.onnx").toString();
             if (!healthResp.ok) {
               return Response.json({
                 ok: true,
                 data: {
-                  modelVer: cfg.modelVer,
+                  modelVer: activeModelVer,
+                  modelList: models,
                   available: false,
                   status: healthResp.status,
                   source: "FACE_INFERENCE_SERVICE",
@@ -1522,7 +1608,8 @@ export default {
             return Response.json({
               ok: true,
               data: {
-                modelVer: cfg.modelVer,
+                modelVer: activeModelVer,
+                modelList: models,
                 available: true,
                 status: healthResp.status,
                 source: "FACE_INFERENCE_SERVICE",
@@ -1536,6 +1623,7 @@ export default {
               ok: true,
               data: {
                 modelVer: "mobilefacenet.onnx",
+                modelList: [],
                 available: false,
                 status: 500,
                 source: "FACE_INFERENCE_SERVICE",
@@ -1648,9 +1736,12 @@ export default {
             const body = await request.json() as any;
             const classId = Number(body.classId || 0);
             const requestedModelVer = (body.modelVer || "").toString().trim();
-            const maxStudents = Math.min(Number(body.maxStudents || 50), 200);
+            const maxStudents = Math.min(Number(body.maxStudents || 50), 100);
             const studentIdsRaw = Array.isArray(body.studentIds) ? body.studentIds : [];
             const studentIds = studentIdsRaw.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v) && v > 0);
+            if (classId <= 0 && studentIds.length === 0) {
+              return Response.json({ error: "请先选择班级再执行批量提取" }, { status: 400, headers: corsHeaders });
+            }
             const samplesRaw = Array.isArray(body.samples) ? body.samples : [];
             const sampleMap = new Map<number, { vector: number[]; quality: number | null }>();
             for (const sample of samplesRaw) {
@@ -1699,7 +1790,7 @@ export default {
               inferErrorMap.set(it.studentId, "AVATAR_NOT_SET");
             }
 
-            const chunks = chunkArray(inferCandidatesWithAvatar, 24);
+            const chunks = chunkArray(inferCandidatesWithAvatar, FACE_INFER_BATCH_CHUNK_SIZE);
             for (const chunk of chunks) {
               try {
                 const batchRes = await extractEmbeddingsBatchByExternalService(env, request, chunk);
@@ -1787,7 +1878,7 @@ export default {
             const body = await request.json() as any;
             const classId = Number(body.classId || 0);
             const threshold = Number.isFinite(Number(body.threshold)) ? Number(body.threshold) : 0.55;
-            const maxStudents = Math.min(Number(body.maxStudents || 50), 200);
+            const maxStudents = Math.min(Number(body.maxStudents || 50), 100);
             const studentIdsRaw = Array.isArray(body.studentIds) ? body.studentIds : [];
             const studentIds = studentIdsRaw.map((v: any) => Number(v)).filter((v: number) => Number.isFinite(v) && v > 0);
             const probesRaw = Array.isArray(body.probes) ? body.probes : [];
@@ -1803,9 +1894,9 @@ export default {
             if (studentIds.length > 0) {
               const placeholders = studentIds.map(() => "?").join(", ");
               const query = `
-                SELECT s.id, s.classId, s.name, s.avatarUri, c.name AS className
+                SELECT s.id, s.classId, s.name, s.avatarUri, COALESCE(c.name, '未分班') AS className
                 FROM Student s
-                JOIN Classroom c ON c.id = s.classId
+                LEFT JOIN Classroom c ON c.id = s.classId
                 WHERE s.id IN (${placeholders})
                 LIMIT ?
               `;
@@ -1813,9 +1904,9 @@ export default {
               students = results || [];
             } else if (classId > 0) {
               const { results } = await env.DB.prepare(
-                `SELECT s.id, s.classId, s.name, s.avatarUri, c.name AS className
+                `SELECT s.id, s.classId, s.name, s.avatarUri, COALESCE(c.name, '未分班') AS className
                  FROM Student s
-                 JOIN Classroom c ON c.id = s.classId
+                 LEFT JOIN Classroom c ON c.id = s.classId
                  WHERE s.classId = ?
                  ORDER BY s.id ASC
                  LIMIT ?`
@@ -1823,9 +1914,9 @@ export default {
               students = results || [];
             } else {
               const { results } = await env.DB.prepare(
-                `SELECT s.id, s.classId, s.name, s.avatarUri, c.name AS className
+                `SELECT s.id, s.classId, s.name, s.avatarUri, COALESCE(c.name, '未分班') AS className
                  FROM Student s
-                 JOIN Classroom c ON c.id = s.classId
+                 LEFT JOIN Classroom c ON c.id = s.classId
                  ORDER BY s.id ASC
                  LIMIT ?`
               ).bind(maxStudents).all();
@@ -1841,7 +1932,7 @@ export default {
               .map((s) => ({ studentId: Number(s.id), avatarUri: (s.avatarUri || "").toString().trim() }))
               .filter((s) => s.avatarUri.length > 0);
             if (inferProbeCandidates.length > 0) {
-              const probeChunks = chunkArray(inferProbeCandidates, 24);
+              const probeChunks = chunkArray(inferProbeCandidates, FACE_INFER_BATCH_CHUNK_SIZE);
               for (const chunk of probeChunks) {
                 try {
                   const inferred = await extractEmbeddingsBatchByExternalService(env, request, chunk);

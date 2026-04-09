@@ -131,6 +131,47 @@ export const createClassroom = async (classroom: Omit<Classroom, 'id' | 'student
   }
 };
 
+export const updateClassroom = async (id: number, classroom: Partial<Omit<Classroom, 'id' | 'studentCount'>>): Promise<{ success: boolean; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号仅可查看 mock 数据' };
+  }
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/classrooms/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': API_KEY },
+      body: JSON.stringify(classroom)
+    });
+    const data: any = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || '更新班级失败' };
+    }
+    return { success: true };
+  } catch (e) {
+    console.error('Update classroom error:', e);
+    return { success: false, error: '网络错误' };
+  }
+};
+
+export const deleteClassroom = async (id: number): Promise<{ success: boolean; error?: string }> => {
+  if (isDemoAccount()) {
+    return { success: false, error: '演示账号仅可查看 mock 数据' };
+  }
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/classrooms/${id}`, {
+      method: 'DELETE',
+      headers: { 'X-API-Key': API_KEY }
+    });
+    const data: any = await res.json();
+    if (!res.ok) {
+      return { success: false, error: data.error || '删除班级失败' };
+    }
+    return { success: true };
+  } catch (e) {
+    console.error('Delete classroom error:', e);
+    return { success: false, error: '网络错误' };
+  }
+};
+
 export const createStudentsBatch = async (classId: number, students: any[]): Promise<{ success: boolean; error?: string }> => {
   if (isDemoAccount()) {
     return { success: false, error: '演示账号仅可查看 mock 数据' };
@@ -490,6 +531,7 @@ export const fetchFaceModelStatus = async (): Promise<FaceModelStatus | null> =>
     await delay();
     return {
       modelVer: 'mobilefacenet.onnx',
+      modelList: ['mobilefacenet.onnx'],
       available: false,
       status: 0,
       source: 'NONE',
@@ -502,6 +544,9 @@ export const fetchFaceModelStatus = async (): Promise<FaceModelStatus | null> =>
     if (!data) return null;
     return {
       modelVer: String(data.modelVer || 'mobilefacenet.onnx'),
+      modelList: Array.isArray(data.modelList)
+        ? data.modelList.map((v: any) => String(v || '').trim()).filter((v: string) => v.length > 0)
+        : undefined,
       available: Boolean(data.available),
       status: Number(data.status || 0),
       source: data.source === 'FACE_INFERENCE_SERVICE' ? 'FACE_INFERENCE_SERVICE' : 'NONE',

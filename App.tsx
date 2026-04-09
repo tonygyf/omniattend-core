@@ -89,10 +89,10 @@ const AppContent = () => {
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
+      <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0">
         
         {/* Mobile Header */}
-        <header className="lg:hidden bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center justify-between z-10">
+        <header className="lg:hidden bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 px-4 py-3 flex items-center justify-between z-10 shrink-0">
           <div className="flex items-center gap-2 font-bold text-lg text-slate-800 dark:text-white">
              <img src="/bluelogo.png" alt="FaceCheck logo light" className="w-6 h-6 object-contain dark:hidden" />
              <img src="/blacklogo.png" alt="FaceCheck logo dark" className="w-6 h-6 object-contain hidden dark:block" />
@@ -107,7 +107,7 @@ const AppContent = () => {
         </header>
 
         {/* Scrollable Page Content */}
-        <main className="flex-1 overflow-y-auto p-4 lg:p-8">
+        <main id="main-scroll-container" className="flex-1 overflow-y-auto p-4 lg:p-8 min-h-0">
           <div className="max-w-7xl mx-auto">
             <ErrorBoundary>
               <Suspense fallback={<div className="h-40 flex items-center justify-center text-slate-500">页面加载中...</div>}>
