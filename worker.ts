@@ -236,8 +236,16 @@ async function warmupFaceInferenceService(env: Env): Promise<void> {
   }
 }
 
-async function extractEmbeddingByExternalService(env: Env, request: Request, avatarUri: string): Promise<{ embedding: number[]; modelVer: string; source: "DB" | "ENV" | "DEFAULT" }> {
-  const imageUrl = toPublicImageUrl(env, request, avatarUri);
+async function extractEmbeddingByExternalService(
+  env: Env,
+  request: Request,
+  avatarUriOrUrl: string,
+  requestedModelVer?: string
+): Promise<{ embedding: number[]; modelVer: string; source: "DB" | "ENV" | "DEFAULT" }> {
+  const rawInput = (avatarUriOrUrl || "").toString().trim();
+  const imageUrl = /^https?:\/\//i.test(rawInput)
+    ? rawInput
+    : toPublicImageUrl(env, request, rawInput);
   if (!imageUrl) {
     throw new Error("AVATAR_URL_INVALID");
   }
@@ -249,13 +257,14 @@ async function extractEmbeddingByExternalService(env: Env, request: Request, ava
   if (cfg.apiKey) {
     headers["X-API-Key"] = cfg.apiKey;
   }
+  const modelVerToUse = (requestedModelVer || cfg.modelVer || "mobilefacenet.onnx").toString().trim() || "mobilefacenet.onnx";
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort("INFERENCE_TIMEOUT"), cfg.timeoutMs);
   const resp = await fetch(`${cfg.baseUrl}/embed/url`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ image_url: imageUrl, modelVer: cfg.modelVer }),
+    body: JSON.stringify({ image_url: imageUrl, modelVer: modelVerToUse }),
     signal: controller.signal
   }).finally(() => clearTimeout(timer));
   if (!resp.ok) {
@@ -270,7 +279,7 @@ async function extractEmbeddingByExternalService(env: Env, request: Request, ava
 
   return {
     embedding,
-    modelVer: (payload?.modelVer || cfg.modelVer || "mobilefacenet.onnx").toString(),
+    modelVer: (payload?.modelVer || modelVerToUse).toString(),
     source: cfg.source
   };
 }
@@ -287,7 +296,8 @@ function chunkArray<T>(input: T[], size: number): T[][] {
 async function extractEmbeddingsBatchByExternalService(
   env: Env,
   request: Request,
-  students: Array<{ studentId: number; avatarUri: string }>
+  students: Array<{ studentId: number; avatarUri: string }>,
+  requestedModelVer?: string
 ): Promise<{
   modelVer: string;
   source: "DB" | "ENV" | "DEFAULT";
@@ -318,12 +328,13 @@ async function extractEmbeddingsBatchByExternalService(
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (cfg.apiKey) headers["X-API-Key"] = cfg.apiKey;
+  const modelVerToUse = (requestedModelVer || cfg.modelVer || "mobilefacenet.onnx").toString().trim() || "mobilefacenet.onnx";
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort("INFERENCE_TIMEOUT"), cfg.timeoutMs);
   const resp = await fetch(`${cfg.baseUrl}/embed/url/batch`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ items: payloadItems, modelVer: cfg.modelVer }),
+    body: JSON.stringify({ items: payloadItems, modelVer: modelVerToUse }),
     signal: controller.signal
   }).finally(() => clearTimeout(timer));
   if (!resp.ok) {
@@ -349,7 +360,7 @@ async function extractEmbeddingsBatchByExternalService(
   }
 
   return {
-    modelVer: (payload?.modelVer || cfg.modelVer || "mobilefacenet.onnx").toString(),
+    modelVer: (payload?.modelVer || modelVerToUse).toString(),
     source: cfg.source,
     successMap,
     errorMap
@@ -395,7 +406,7 @@ async function enrichFaceVerificationForCheckin(env: Env, request: Request, task
   }
 
   const latestTemplate = await env.DB.prepare(
-    `SELECT vector
+    `SELECT vector, modelVer
      FROM FaceEmbedding
      WHERE studentId = ?
      ORDER BY createdAt DESC, id DESC
@@ -418,7 +429,13 @@ async function enrichFaceVerificationForCheckin(env: Env, request: Request, task
 
   let probeVector: number[] = [];
   try {
-    const inferred = await extractEmbeddingByExternalService(env, request, photoUrl);
+    const templateModelVer = (latestTemplate?.modelVer || "").toString().trim();
+    const inferred = await extractEmbeddingByExternalService(
+      env,
+      request,
+      photoUrl,
+      templateModelVer || undefined
+    );
     probeVector = inferred.embedding;
   } catch (err: any) {
     body.faceVerifyScore = 0;
@@ -1806,6 +1823,7 @@ export default {
             const enrolled: any[] = [];
             const inferredVectorMap = new Map<number, { vector: number[]; modelVer: string }>();
             const inferErrorMap = new Map<number, string>();
+            let resolvedModelVer = requestedModelVer || "";
 
             const inferCandidates = students
               .map((s) => ({ studentId: Number(s.id), avatarUri: (s.avatarUri || "").toString().trim() }));
@@ -1818,7 +1836,13 @@ export default {
             const chunks = chunkArray(inferCandidatesWithAvatar, FACE_INFER_BATCH_CHUNK_SIZE);
             for (const chunk of chunks) {
               try {
-                const batchRes = await extractEmbeddingsBatchByExternalService(env, request, chunk);
+                const batchRes = await extractEmbeddingsBatchByExternalService(
+                  env,
+                  request,
+                  chunk,
+                  requestedModelVer || undefined
+                );
+                if (batchRes.modelVer) resolvedModelVer = batchRes.modelVer;
                 for (const [sid, vector] of batchRes.successMap.entries()) {
                   inferredVectorMap.set(sid, { vector, modelVer: batchRes.modelVer });
                 }
@@ -1886,7 +1910,7 @@ export default {
                 totalCount: students.length,
                 successCount,
                 failCount: failures.length,
-                modelVer: requestedModelVer || "mobilefacenet.onnx",
+                modelVer: resolvedModelVer || requestedModelVer || "mobilefacenet.onnx",
                 classId: classId || null,
                 enrolled: enrolled.slice(0, 30),
                 failures: failures.slice(0, 30)

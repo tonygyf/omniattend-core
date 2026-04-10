@@ -280,6 +280,11 @@ const AiInsightsPage: React.FC = () => {
     return Array.from(merged);
   }, [availableModels, modelVer]);
 
+  const handleModelSelectionChange = (nextModel: string) => {
+    setModelVer(nextModel);
+    setConfigModelVer(nextModel);
+  };
+
   const sortedTemplates = useMemo(() => {
     const items = [...templates];
     items.sort((a, b) => {
@@ -406,7 +411,7 @@ const AiInsightsPage: React.FC = () => {
                       <select
                         className="bg-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/30 [&>option]:text-slate-800"
                         value={modelVer}
-                        onChange={e => setModelVer(e.target.value)}
+                        onChange={e => handleModelSelectionChange(e.target.value)}
                       >
                         {modelOptions.map((name) => (
                           <option key={name} value={name}>
@@ -418,7 +423,7 @@ const AiInsightsPage: React.FC = () => {
                       <input
                         className="bg-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
                         value={modelVer}
-                        onChange={e => setModelVer(e.target.value)}
+                        onChange={e => handleModelSelectionChange(e.target.value)}
                         placeholder="模型版本"
                       />
                     )}
