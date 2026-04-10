@@ -55,6 +55,7 @@ const AiInsightsPage: React.FC = () => {
   const [isConfigCollapsed, setIsConfigCollapsed] = useState(true);
   const [isHeroCollapsed, setIsHeroCollapsed] = useState(false);
   const lastScrollYRef = useRef(0);
+  const heroManualCollapseLockRef = useRef(false);
 
   const auth = useAuth();
 
@@ -116,6 +117,11 @@ const AiInsightsPage: React.FC = () => {
     if (typeof window === 'undefined') return;
     const scrollContainer = document.getElementById('main-scroll-container');
     if (!scrollContainer) return;
+    const COLLAPSE_SCROLL_Y = 90;
+    const EXPAND_NEAR_TOP_Y = 72;
+
+    // 先对齐初始滚动位置，避免首次触发时方向判断错误
+    lastScrollYRef.current = scrollContainer.scrollTop || 0;
 
     let ticking = false;
     const onScroll = () => {
@@ -126,10 +132,16 @@ const AiInsightsPage: React.FC = () => {
         const delta = currentY - lastScrollYRef.current;
 
         if (currentY < 28) {
+          heroManualCollapseLockRef.current = false;
           setIsHeroCollapsed(false);
-        } else if (delta > 4 && currentY > 90) {
+        } else if (delta > 4 && currentY > COLLAPSE_SCROLL_Y) {
+          heroManualCollapseLockRef.current = false;
           setIsHeroCollapsed(true);
-        } else if (delta < -6) {
+        } else if (
+          delta < -6 &&
+          currentY < EXPAND_NEAR_TOP_Y &&
+          !heroManualCollapseLockRef.current
+        ) {
           setIsHeroCollapsed(false);
         }
 
@@ -141,6 +153,18 @@ const AiInsightsPage: React.FC = () => {
     scrollContainer.addEventListener('scroll', onScroll, { passive: true });
     return () => scrollContainer.removeEventListener('scroll', onScroll);
   }, []);
+
+  const handleHeroCollapseToggle = () => {
+    const nextCollapsed = !isHeroCollapsed;
+    setIsHeroCollapsed(nextCollapsed);
+    if (nextCollapsed) {
+      // 手动收起后加锁，避免中途上滑被自动展开干扰
+      heroManualCollapseLockRef.current = true;
+    } else {
+      // 手动展开时立即解除锁定
+      heroManualCollapseLockRef.current = false;
+    }
+  };
 
   const handleEnrollBatch = async () => {
     const normalizedModelVer = modelVer.trim();
@@ -548,7 +572,7 @@ const AiInsightsPage: React.FC = () => {
         {/* Toggle Button */}
         <div className={`absolute left-0 right-0 z-20 flex justify-center pointer-events-none ${isHeroCollapsed ? 'bottom-0' : 'bottom-1'}`}>
           <button
-            onClick={() => setIsHeroCollapsed(!isHeroCollapsed)}
+            onClick={handleHeroCollapseToggle}
             className={`pointer-events-auto transition-colors bg-transparent flex items-center justify-center ${
               isHeroCollapsed 
                 ? 'text-white/80 hover:text-white pb-1 pt-2 px-8' 
