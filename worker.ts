@@ -1808,7 +1808,6 @@ export default {
             const inferErrorMap = new Map<number, string>();
 
             const inferCandidates = students
-              .filter((s) => !sampleMap.has(Number(s.id)))
               .map((s) => ({ studentId: Number(s.id), avatarUri: (s.avatarUri || "").toString().trim() }));
             const inferCandidatesWithAvatar = inferCandidates.filter((it) => it.avatarUri.length > 0);
             const inferCandidatesNoAvatar = inferCandidates.filter((it) => !it.avatarUri);
