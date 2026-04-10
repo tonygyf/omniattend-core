@@ -221,7 +221,7 @@ async function warmupFaceInferenceService(env: Env): Promise<void> {
     const cfg = await getFaceInferenceConfig(env);
     const headers: Record<string, string> = {};
     if (cfg.apiKey) headers["X-API-Key"] = cfg.apiKey;
-    const resp = await fetch(`${cfg.baseUrl}/health`, {
+    const resp = await fetch(`${cfg.baseUrl}/health?modelVer=${encodeURIComponent(cfg.modelVer)}`, {
       method: "GET",
       headers
     });
@@ -255,7 +255,7 @@ async function extractEmbeddingByExternalService(env: Env, request: Request, ava
   const resp = await fetch(`${cfg.baseUrl}/embed/url`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ image_url: imageUrl }),
+    body: JSON.stringify({ image_url: imageUrl, modelVer: cfg.modelVer }),
     signal: controller.signal
   }).finally(() => clearTimeout(timer));
   if (!resp.ok) {
@@ -264,7 +264,7 @@ async function extractEmbeddingByExternalService(env: Env, request: Request, ava
   }
   const payload = await resp.json<any>();
   const embedding = toNumberArray(payload?.embedding);
-  if (embedding.length !== 128) {
+  if (!embedding.length) {
     throw new Error("INFERENCE_VECTOR_INVALID");
   }
 
@@ -323,7 +323,7 @@ async function extractEmbeddingsBatchByExternalService(
   const resp = await fetch(`${cfg.baseUrl}/embed/url/batch`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ items: payloadItems }),
+    body: JSON.stringify({ items: payloadItems, modelVer: cfg.modelVer }),
     signal: controller.signal
   }).finally(() => clearTimeout(timer));
   if (!resp.ok) {
@@ -341,7 +341,7 @@ async function extractEmbeddingsBatchByExternalService(
       continue;
     }
     const embedding = toNumberArray(row?.embedding);
-    if (embedding.length !== 128) {
+    if (!embedding.length) {
       errorMap.set(sid, "INFERENCE_VECTOR_INVALID");
       continue;
     }
@@ -409,7 +409,7 @@ async function enrichFaceVerificationForCheckin(env: Env, request: Request, task
   }
 
   const templateVector = toNumberArray(latestTemplate.vector);
-  if (templateVector.length !== 128) {
+  if (!templateVector.length) {
     body.faceVerifyScore = 0;
     body.faceVerifyPassed = 0;
     body.faceVerifyReason = "FACE_TEMPLATE_INVALID";
@@ -1604,7 +1604,7 @@ export default {
             const cfg = await getFaceInferenceConfig(env);
             const headers: Record<string, string> = {};
             if (cfg.apiKey) headers["X-API-Key"] = cfg.apiKey;
-            const healthResp = await fetch(`${cfg.baseUrl}/health`, { method: "GET", headers });
+            const healthResp = await fetch(`${cfg.baseUrl}/health?modelVer=${encodeURIComponent(cfg.modelVer)}`, { method: "GET", headers });
             const healthText = await healthResp.text();
             let healthPayload: any = null;
             try {
@@ -1963,7 +1963,7 @@ export default {
                 try {
                   const inferred = await extractEmbeddingsBatchByExternalService(env, request, chunk);
                   for (const [sid, vector] of inferred.successMap.entries()) {
-                    if (!probeMap.has(sid) && vector.length === 128) {
+                    if (!probeMap.has(sid) && vector.length > 0) {
                       probeMap.set(sid, vector);
                     }
                   }
