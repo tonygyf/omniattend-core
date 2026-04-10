@@ -55,7 +55,6 @@ const AiInsightsPage: React.FC = () => {
   const [isConfigCollapsed, setIsConfigCollapsed] = useState(true);
   const [isHeroCollapsed, setIsHeroCollapsed] = useState(false);
   const lastScrollYRef = useRef(0);
-  const heroManualCollapseLockRef = useRef(false);
 
   const auth = useAuth();
 
@@ -131,18 +130,11 @@ const AiInsightsPage: React.FC = () => {
         const currentY = scrollContainer.scrollTop || 0;
         const delta = currentY - lastScrollYRef.current;
 
-        if (currentY < 28) {
-          heroManualCollapseLockRef.current = false;
-          setIsHeroCollapsed(false);
-        } else if (delta > 4 && currentY > COLLAPSE_SCROLL_Y) {
-          heroManualCollapseLockRef.current = false;
+        // 向下滚动超过一定阈值，自动收起。
+        // 根据用户要求，收起后不再自动展开（除非手动点击）。
+        if (delta > 5 && currentY > 50 && !isHeroCollapsed) {
+          // 如果用户刚手动操作过，可以稍微尊重点，但这里最稳妥就是只管收起
           setIsHeroCollapsed(true);
-        } else if (
-          delta < -6 &&
-          currentY < EXPAND_NEAR_TOP_Y &&
-          !heroManualCollapseLockRef.current
-        ) {
-          setIsHeroCollapsed(false);
         }
 
         lastScrollYRef.current = currentY;
@@ -155,15 +147,7 @@ const AiInsightsPage: React.FC = () => {
   }, []);
 
   const handleHeroCollapseToggle = () => {
-    const nextCollapsed = !isHeroCollapsed;
-    setIsHeroCollapsed(nextCollapsed);
-    if (nextCollapsed) {
-      // 手动收起后加锁，避免中途上滑被自动展开干扰
-      heroManualCollapseLockRef.current = true;
-    } else {
-      // 手动展开时立即解除锁定
-      heroManualCollapseLockRef.current = false;
-    }
+    setIsHeroCollapsed(!isHeroCollapsed);
   };
 
   const handleEnrollBatch = async () => {
@@ -354,10 +338,10 @@ const AiInsightsPage: React.FC = () => {
   }, [templates]);
 
   return (
-    <motion.div translate="no" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 lg:space-y-7">
+    <motion.div translate="no" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 lg:space-y-7 relative">
       <motion.section
         animate={{ height: isHeroCollapsed ? 52 : 'auto' }}
-        className="relative w-full overflow-hidden shrink-0 bg-gradient-to-br from-blue-700 via-blue-600 to-cyan-500 rounded-2xl shadow-lg mb-6 pb-2"
+        className={`sticky top-0 z-40 w-full overflow-hidden shrink-0 bg-gradient-to-br from-blue-700 via-blue-600 to-cyan-500 rounded-2xl shadow-lg pb-2 transition-all ${isHeroCollapsed ? 'mb-4' : 'mb-6'}`}
       >
         {/* Background Animation Layer */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
