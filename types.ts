@@ -106,6 +106,7 @@ export enum CurrentUserStatus {
   PENDING_REVIEW = 'PENDING_REVIEW',
   REJECTED = 'REJECTED',
   NOT_SUBMITTED = 'NOT_SUBMITTED',
+  LATE = 'LATE',
 }
 
 export enum AutoCheckResult {
@@ -216,6 +217,7 @@ export interface FaceVerifyResponse {
 
 export interface ReviewSubmissionRequest {
   action: 'approve' | 'reject';
+  reason?: string;
   note?: string;
   reviewerId: number; // Reviewer ID is required
   markAsLate?: boolean;

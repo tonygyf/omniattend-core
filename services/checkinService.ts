@@ -138,8 +138,8 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
         throw new Error("Check-in task not found.");
     }
 
-    if (task.status !== 'ACTIVE') {
-        throw new Error("Check-in task is not active or has ended.");
+    if (task.status === 'CLOSED') {
+        throw new Error("Check-in task is closed.");
     }
 
     const now = new Date();
@@ -148,12 +148,18 @@ export async function submitCheckin(db: D1Database, taskId: number, submissionDa
     if (!taskStartAt || !taskEndAt) {
         throw new Error("Check-in task time format is invalid.");
     }
-    if (now.getTime() < taskStartAt.getTime() || now.getTime() > taskEndAt.getTime()) {
-        throw new Error("Check-in is not within the allowed time frame.");
+    if (now.getTime() < taskStartAt.getTime()) {
+        throw new Error("Check-in task has not started yet.");
     }
 
     let autoResult: 'PASS' | 'FAIL' = 'PASS';
     const reasons: string[] = [];
+
+    const isLate = now.getTime() > taskEndAt.getTime();
+    if (isLate) {
+        autoResult = 'FAIL';
+        reasons.push('迟到提交 (Late submission)');
+    }
 
     // Geo-distance validation
     if (task.locationLat != null && task.locationLng != null && task.locationRadiusM != null) {
@@ -287,12 +293,25 @@ export async function getCheckinTaskDetails(db: D1Database, taskId: number) {
         WHERE s.classId = ?
     `).bind(taskId, task.classId).all();
 
-    const users = (usersRaw.results || []).map(row => ({ ...row, status: row.status || 'NOT_SUBMITTED' }));
+    const users = (usersRaw.results || []).map(row => {
+        let status = row.status || 'NOT_SUBMITTED';
+        if (status === 'APPROVED' && row.submittedAt) {
+            const submittedTime = parseCheckinDateTime(row.submittedAt);
+            const endTime = parseCheckinDateTime(task.endAt);
+            const reasonText = (row.reason || '').toString();
+            const markedAsLateByReviewer = reasonText.includes('[MARKED_AS_LATE]');
+            if ((submittedTime && endTime && submittedTime.getTime() > endTime.getTime()) || markedAsLateByReviewer) {
+                status = 'LATE';
+            }
+        }
+        return { ...row, status };
+    });
 
     // 3. Calculate summary
     const summary = {
         total: users.length,
         signedIn: users.filter(u => u.status === 'APPROVED').length,
+        late: users.filter(u => u.status === 'LATE').length,
         pendingReview: users.filter(u => u.status === 'PENDING_REVIEW').length,
         rejected: users.filter(u => u.status === 'REJECTED').length,
         notSubmitted: users.filter(u => u.status === 'NOT_SUBMITTED').length,
@@ -304,7 +323,17 @@ export async function getCheckinTaskDetails(db: D1Database, taskId: number) {
 
 // 4. Review a Submission
 export async function reviewSubmission(db: D1Database, submissionId: number, reviewData: any) {
-    const { action, reviewerId, reason } = reviewData;
+    // Backward compatible:
+    // - New payload: { action: 'approve'|'reject', reviewerId, reason?, markAsLate? }
+    // - Legacy payload: { approved: boolean, note? }
+    const rawAction = (reviewData?.action || '').toString().trim().toLowerCase();
+    const legacyApproved = typeof reviewData?.approved === 'boolean' ? reviewData.approved : null;
+    const action = rawAction
+        ? rawAction
+        : (legacyApproved == null ? '' : (legacyApproved ? 'approve' : 'reject'));
+    const reviewerId = Number(reviewData?.reviewerId || 0);
+    const reason = reviewData?.reason ?? reviewData?.note;
+    const markAsLate = reviewData?.markAsLate === true || reviewData?.markAsLate === 1 || reviewData?.markAsLate === '1';
 
     if (!action || !['approve', 'reject'].includes(action) || !reviewerId) {
         throw new Error("action ('approve' or 'reject') and reviewerId are required.");
@@ -323,9 +352,15 @@ export async function reviewSubmission(db: D1Database, submissionId: number, rev
 
     const existingReason = (submission.reason || '').toString().trim();
     const reviewerReason = (reason || '').toString().trim();
-    const mergedReason = reviewerReason
+    let mergedReason = reviewerReason
         ? (existingReason ? `${existingReason}; Reviewer note: ${reviewerReason}` : `Reviewer note: ${reviewerReason}`)
         : (existingReason || null);
+
+    if (action === 'approve' && markAsLate) {
+        mergedReason = mergedReason
+            ? `${mergedReason}; [MARKED_AS_LATE]`
+            : '[MARKED_AS_LATE]';
+    }
 
     const ps = db.prepare(`
         UPDATE CheckinSubmission
