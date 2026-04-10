@@ -116,10 +116,7 @@ const AiInsightsPage: React.FC = () => {
     if (typeof window === 'undefined') return;
     const scrollContainer = document.getElementById('main-scroll-container');
     if (!scrollContainer) return;
-    const COLLAPSE_SCROLL_Y = 90;
-    const EXPAND_NEAR_TOP_Y = 72;
 
-    // 先对齐初始滚动位置，避免首次触发时方向判断错误
     lastScrollYRef.current = scrollContainer.scrollTop || 0;
 
     let ticking = false;
@@ -130,10 +127,7 @@ const AiInsightsPage: React.FC = () => {
         const currentY = scrollContainer.scrollTop || 0;
         const delta = currentY - lastScrollYRef.current;
 
-        // 向下滚动超过一定阈值，自动收起。
-        // 根据用户要求，收起后不再自动展开（除非手动点击）。
         if (delta > 5 && currentY > 50 && !isHeroCollapsed) {
-          // 如果用户刚手动操作过，可以稍微尊重点，但这里最稳妥就是只管收起
           setIsHeroCollapsed(true);
         }
 
@@ -144,7 +138,7 @@ const AiInsightsPage: React.FC = () => {
 
     scrollContainer.addEventListener('scroll', onScroll, { passive: true });
     return () => scrollContainer.removeEventListener('scroll', onScroll);
-  }, []);
+  }, [isHeroCollapsed]);
 
   const handleHeroCollapseToggle = () => {
     setIsHeroCollapsed(!isHeroCollapsed);
@@ -243,7 +237,6 @@ const AiInsightsPage: React.FC = () => {
     }
   };
 
-  // ✅ 修复：补回缺失的函数声明头
   const handleSaveInferenceConfig = async () => {
     const baseUrl = configBaseUrl.trim().replace(/\/+$/, '');
     const model = configModelVer.trim() || 'mobilefacenet.onnx';
@@ -339,9 +332,16 @@ const AiInsightsPage: React.FC = () => {
 
   return (
     <motion.div translate="no" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 lg:space-y-7 relative">
-      <motion.section
-        animate={{ height: isHeroCollapsed ? 52 : 'auto' }}
-        className={`sticky top-0 z-40 w-full overflow-hidden shrink-0 bg-gradient-to-br from-blue-700 via-blue-600 to-cyan-500 rounded-2xl shadow-lg pb-2 transition-all ${isHeroCollapsed ? 'mb-4' : 'mb-6'}`}
+
+      {/* ─── Hero Section ────────────────────────────────────────────────────── */}
+      {/* 
+        关键修复：不再在外层 section 上做 height 动画。
+        height: 'auto' 的插值需要运行时测量，Framer Motion 完成测量后会补一帧，
+        造成展开末尾的"弹出"抖动。
+        改为：外层 div 自然撑高，内容区用 height: 0 → 'auto' + overflow:hidden 完成折叠。
+      */}
+      <div
+        className={`sticky top-0 z-40 w-full overflow-hidden shrink-0 bg-gradient-to-br from-blue-700 via-blue-600 to-cyan-500 rounded-2xl shadow-lg ${isHeroCollapsed ? 'mb-4' : 'mb-6'}`}
       >
         {/* Background Animation Layer */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
@@ -359,9 +359,9 @@ const AiInsightsPage: React.FC = () => {
             <motion.span
               key={`meteor-${idx}`}
               className="absolute h-[2px] rounded-full bg-gradient-to-l from-transparent via-white/80 to-white shadow-[0_0_12px_rgba(255,255,255,1)]"
-              style={{ 
-                top: meteor.top, 
-                left: meteor.left, 
+              style={{
+                top: meteor.top,
+                left: meteor.left,
                 width: 250 + (idx * 40)
               }}
               initial={{ x: 0, y: 0, opacity: 0, rotate: -45 }}
@@ -371,180 +371,16 @@ const AiInsightsPage: React.FC = () => {
           ))}
         </div>
 
-        {/* Expanded Content */}
-        <AnimatePresence>
-          {!isHeroCollapsed && (
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="relative z-10 px-6 pt-8 pb-10 text-white flex flex-col"
-            >
-              <div className="flex flex-col md:flex-row gap-8 items-start">
-                <div className="flex-1">
-                  <div className="inline-flex items-center justify-center p-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl shadow-lg mb-3">
-                    <Sparkles className="text-white w-6 h-6" />
-                  </div>
-                  <div className="text-xs font-bold tracking-widest text-cyan-100 mb-2">
-                    FACE VECTOR WORKSPACE
-                  </div>
-                  <h1 className="text-3xl font-extrabold tracking-tight mb-3 drop-shadow-md">
-                    人脸特征中心
-                  </h1>
-                  <p className="text-sm text-blue-50 max-w-lg leading-relaxed mb-6">
-                    用于管理学生人脸特征向量，提供班级维度批量提取、服务可用性检测与推理中心配置。
-                  </p>
-                </div>
-
-                <div className="w-full md:w-[500px] bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-5 shadow-inner">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Bot className="w-5 h-5 text-white" />
-                    <h2 className="text-base font-bold tracking-wide">特征提取任务</h2>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-                    <select
-                      className="bg-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/30 [&>option]:text-slate-800"
-                      value={selectedClassId}
-                      onChange={e => setSelectedClassId(Number(e.target.value))}
-                    >
-                      <option value={0}>请选择班级</option>
-                      {classrooms.map(c => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                    {modelOptions.length > 0 ? (
-                      <select
-                        className="bg-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/30 [&>option]:text-slate-800"
-                        value={modelVer}
-                        onChange={e => handleModelSelectionChange(e.target.value)}
-                      >
-                        {modelOptions.map((name) => (
-                          <option key={name} value={name}>
-                            {name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        className="bg-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
-                        value={modelVer}
-                        onChange={e => handleModelSelectionChange(e.target.value)}
-                        placeholder="模型版本"
-                      />
-                    )}
-                  </div>
-                  
-                  <div className="flex flex-wrap items-center gap-3 mb-4">
-                    <button
-                      onClick={handleEnrollBatch}
-                      disabled={runningEnroll || loading}
-                      className="flex-1 flex items-center justify-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50 text-sm font-medium"
-                    >
-                      {runningEnroll ? <Loader2 className="animate-spin w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
-                      {runningEnroll ? '提取中...' : '批量提取向量'}
-                    </button>
-                    <button
-                      onClick={handleCheckModel}
-                      disabled={checkingModel || loading}
-                      className="flex-1 flex items-center justify-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50 text-sm font-medium"
-                    >
-                      {checkingModel ? <Loader2 className="animate-spin w-4 h-4" /> : <HelpCircle className="w-4 h-4" />}
-                      {checkingModel ? '检测中...' : '检测推理中心'}
-                    </button>
-                  </div>
-                  
-                  {selectedClassId > 0 && (
-                    <div className="flex flex-wrap items-center gap-3 mb-4">
-                      <button
-                        onClick={handleClearClassFaceData}
-                        disabled={loading}
-                        className="flex-1 flex items-center justify-center gap-2 bg-red-500/20 text-red-100 px-4 py-2 rounded-lg hover:bg-red-500/30 border border-red-500/30 transition-colors disabled:opacity-50 text-sm font-medium"
-                      >
-                        清空该班级特征向量
-                      </button>
-                    </div>
-                  )}
-
-                  {enrollMessage && <div className="text-xs bg-white/15 px-3 py-2 rounded-lg mb-4">{enrollMessage}</div>}
-
-                  <div className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
-                    <button
-                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold hover:bg-white/10 transition-colors"
-                      onClick={() => setIsConfigCollapsed(prev => !prev)}
-                    >
-                      <span>高级配置</span>
-                      <ChevronDown className={`w-4 h-4 transition-transform ${isConfigCollapsed ? '' : 'rotate-180'}`} />
-                    </button>
-                    <AnimatePresence>
-                      {!isConfigCollapsed && (
-                        <motion.div
-                          initial={{ height: 0, opacity: 0 }}
-                          animate={{ height: 'auto', opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          className="px-3 pb-3"
-                        >
-                          <div className="space-y-2 mt-2">
-                            <input
-                              className="w-full bg-white/15 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
-                              value={configBaseUrl}
-                              onChange={e => setConfigBaseUrl(e.target.value)}
-                              placeholder="推理服务地址"
-                            />
-                            <div className="grid grid-cols-2 gap-2">
-                              <input
-                                className="bg-white/15 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
-                                value={configModelVer}
-                                onChange={e => setConfigModelVer(e.target.value)}
-                                placeholder="默认模型版本"
-                              />
-                              <input
-                                className="bg-white/15 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
-                                type="number"
-                                min={1000}
-                                max={60000}
-                                value={configTimeoutMs}
-                                onChange={e => setConfigTimeoutMs(Number(e.target.value))}
-                                placeholder="超时毫秒"
-                              />
-                            </div>
-                            <input
-                              className="w-full bg-white/15 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
-                              value={configApiToken}
-                              onChange={e => setConfigApiToken(e.target.value)}
-                              placeholder="API Key（留空则不改）"
-                              type="password"
-                            />
-                            <button
-                              onClick={handleSaveInferenceConfig}
-                              disabled={savingConfig || loading}
-                              className="w-full bg-white/20 px-4 py-1.5 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50 text-xs font-medium"
-                            >
-                              {savingConfig ? '保存中...' : '保存配置'}
-                            </button>
-                          </div>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-              </div>
-
-              {error && <div className="bg-red-500/80 backdrop-blur-sm p-3 rounded-lg text-sm mt-4 border border-red-400">{error}</div>}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Collapsed Content */}
-        <AnimatePresence>
+        {/* Collapsed pill — shown when collapsed */}
+        <AnimatePresence initial={false}>
           {isHeroCollapsed && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none pb-3"
+              key="collapsed-pill"
+              initial={{ opacity: 0, y: 6, filter: "blur(2px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+              exit={{ opacity: 0, y: -6, filter: "blur(2px)" }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="relative z-10 h-14 flex items-center justify-center pointer-events-none"
             >
               <span className="text-white font-bold tracking-widest text-sm flex items-center gap-2 drop-shadow-md">
                 <Sparkles size={16} className="text-cyan-200" /> 人脸特征中心
@@ -553,20 +389,195 @@ const AiInsightsPage: React.FC = () => {
           )}
         </AnimatePresence>
 
-        {/* Toggle Button */}
-        <div className={`absolute left-0 right-0 z-20 flex justify-center pointer-events-none ${isHeroCollapsed ? 'bottom-0' : 'bottom-1'}`}>
+        {/* Expanded Content — height 0→auto fold, no external section height animation */}
+        <AnimatePresence initial={false}>
+          {!isHeroCollapsed && (
+            <motion.div
+              key="expanded-content"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{
+                height: { duration: 0.35, ease: [0.4, 0, 0.2, 1] },
+                opacity: { duration: 0.25, delay: 0.08, ease: 'easeOut' }
+            }}
+              style={{ overflow: 'hidden' }}
+            >
+              <div className="relative z-10 px-6 pt-8 pb-10 text-white flex flex-col">
+                <div className="flex flex-col md:flex-row gap-8 items-start">
+                  <div className="flex-1">
+                    <div className="inline-flex items-center justify-center p-3 bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl shadow-lg mb-3">
+                      <Sparkles className="text-white w-6 h-6" />
+                    </div>
+                    <div className="text-xs font-bold tracking-widest text-cyan-100 mb-2">
+                      FACE VECTOR WORKSPACE
+                    </div>
+                    <h1 className="text-3xl font-extrabold tracking-tight mb-3 drop-shadow-md">
+                      人脸特征中心
+                    </h1>
+                    <p className="text-sm text-blue-50 max-w-lg leading-relaxed mb-6">
+                      用于管理学生人脸特征向量，提供班级维度批量提取、服务可用性检测与推理中心配置。
+                    </p>
+                  </div>
+
+                  <div className="w-full md:w-[500px] bg-white/10 backdrop-blur-md border border-white/20 rounded-xl p-5 shadow-inner">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Bot className="w-5 h-5 text-white" />
+                      <h2 className="text-base font-bold tracking-wide">特征提取任务</h2>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                      <select
+                        className="bg-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/30 [&>option]:text-slate-800"
+                        value={selectedClassId}
+                        onChange={e => setSelectedClassId(Number(e.target.value))}
+                      >
+                        <option value={0}>请选择班级</option>
+                        {classrooms.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      {modelOptions.length > 0 ? (
+                        <select
+                          className="bg-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-white/30 [&>option]:text-slate-800"
+                          value={modelVer}
+                          onChange={e => handleModelSelectionChange(e.target.value)}
+                        >
+                          {modelOptions.map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          className="bg-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
+                          value={modelVer}
+                          onChange={e => handleModelSelectionChange(e.target.value)}
+                          placeholder="模型版本"
+                        />
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 mb-4">
+                      <button
+                        onClick={handleEnrollBatch}
+                        disabled={runningEnroll || loading}
+                        className="flex-1 flex items-center justify-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50 text-sm font-medium"
+                      >
+                        {runningEnroll ? <Loader2 className="animate-spin w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+                        {runningEnroll ? '提取中...' : '批量提取向量'}
+                      </button>
+                      <button
+                        onClick={handleCheckModel}
+                        disabled={checkingModel || loading}
+                        className="flex-1 flex items-center justify-center gap-2 bg-white/20 px-4 py-2 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50 text-sm font-medium"
+                      >
+                        {checkingModel ? <Loader2 className="animate-spin w-4 h-4" /> : <HelpCircle className="w-4 h-4" />}
+                        {checkingModel ? '检测中...' : '检测推理中心'}
+                      </button>
+                    </div>
+
+                    {selectedClassId > 0 && (
+                      <div className="flex flex-wrap items-center gap-3 mb-4">
+                        <button
+                          onClick={handleClearClassFaceData}
+                          disabled={loading}
+                          className="flex-1 flex items-center justify-center gap-2 bg-red-500/20 text-red-100 px-4 py-2 rounded-lg hover:bg-red-500/30 border border-red-500/30 transition-colors disabled:opacity-50 text-sm font-medium"
+                        >
+                          清空该班级特征向量
+                        </button>
+                      </div>
+                    )}
+
+                    {enrollMessage && <div className="text-xs bg-white/15 px-3 py-2 rounded-lg mb-4">{enrollMessage}</div>}
+
+                    <div className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
+                      <button
+                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold hover:bg-white/10 transition-colors"
+                        onClick={() => setIsConfigCollapsed(prev => !prev)}
+                      >
+                        <span>高级配置</span>
+                        <ChevronDown className={`w-4 h-4 transition-transform ${isConfigCollapsed ? '' : 'rotate-180'}`} />
+                      </button>
+                      <AnimatePresence>
+                        {!isConfigCollapsed && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            style={{ overflow: 'hidden' }}
+                            className="px-3 pb-3"
+                          >
+                            <div className="space-y-2 mt-2">
+                              <input
+                                className="w-full bg-white/15 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                value={configBaseUrl}
+                                onChange={e => setConfigBaseUrl(e.target.value)}
+                                placeholder="推理服务地址"
+                              />
+                              <div className="grid grid-cols-2 gap-2">
+                                <input
+                                  className="bg-white/15 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                  value={configModelVer}
+                                  onChange={e => setConfigModelVer(e.target.value)}
+                                  placeholder="默认模型版本"
+                                />
+                                <input
+                                  className="bg-white/15 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                  type="number"
+                                  min={1000}
+                                  max={60000}
+                                  value={configTimeoutMs}
+                                  onChange={e => setConfigTimeoutMs(Number(e.target.value))}
+                                  placeholder="超时毫秒"
+                                />
+                              </div>
+                              <input
+                                className="w-full bg-white/15 rounded-lg px-3 py-1.5 text-xs text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30"
+                                value={configApiToken}
+                                onChange={e => setConfigApiToken(e.target.value)}
+                                placeholder="API Key（留空则不改）"
+                                type="password"
+                              />
+                              <button
+                                onClick={handleSaveInferenceConfig}
+                                disabled={savingConfig || loading}
+                                className="w-full bg-white/20 px-4 py-1.5 rounded-lg hover:bg-white/30 transition-colors disabled:opacity-50 text-xs font-medium"
+                              >
+                                {savingConfig ? '保存中...' : '保存配置'}
+                              </button>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                </div>
+
+                {error && <div className="bg-red-500/80 backdrop-blur-sm p-3 rounded-lg text-sm mt-4 border border-red-400">{error}</div>}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Toggle Button — 纯 absolute 定位，不参与高度计算，不使用 layout */}
+        <div className="absolute left-0 right-0 bottom-0 z-20 flex justify-center pointer-events-none">
           <button
             onClick={handleHeroCollapseToggle}
             className={`pointer-events-auto transition-colors bg-transparent flex items-center justify-center ${
-              isHeroCollapsed 
-                ? 'text-white/80 hover:text-white pb-1 pt-2 px-8' 
-                : 'p-1 text-white/50 hover:text-white rounded-full'
+              isHeroCollapsed
+                ? 'text-white/80 hover:text-white pb-1 pt-2 px-8'
+                : 'p-1 text-white/50 hover:text-white rounded-full mb-1'
             }`}
           >
             {isHeroCollapsed ? <ChevronDown size={20} /> : <ChevronUp size={18} />}
           </button>
         </div>
-      </motion.section>
+      </div>
+      {/* ─── End Hero Section ────────────────────────────────────────────────── */}
 
       <AnimatePresence>
         {riskStudents.length > 0 && (
