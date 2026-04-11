@@ -262,6 +262,55 @@ Android 端和 Web 端均通过以下 RESTful 接口与后端交互。
 
 ---
 
+## 🧩 系统总体设计与流程（更新）
+
+### 1) 三仓协同定位
+
+- `omniattend-core`：统一业务中台（鉴权、班级/学生、签到任务、审核、统计、文件、模型配置）。
+- `FaceCheck`：Android 端任务执行与提交，承载教师/学生移动端交互。
+- `mobilefacenet-server`：纯推理服务，提供向量提取与批处理能力。
+
+### 2) 核心部署拓扑
+
+```text
+FaceCheck Android / Admin Web
+          |
+          v
+  Cloudflare Worker (this repo)
+          |
+          +--> D1 (业务主数据)
+          +--> R2 (头像/签到图片对象存储)
+          +--> MobileFaceNet Inference Service (向量提取)
+```
+
+### 3) 关键业务链路（端到端）
+
+1. 教师创建签到任务：`POST /api/checkin/tasks`（可配置定位/手势/口令/人脸阈值）。
+2. 学生上传签到照片：`POST /api/checkin/photos/upload`（统一规范到 `records/...` 路径）。
+3. 学生提交签到：`POST /api/checkin/tasks/{id}/submit`。
+4. 服务端按任务配置执行人脸校验：读取模板 -> 调用推理服务 -> 余弦相似度打分 -> 与阈值比较。
+5. 写入提交结果：`APPROVED / PENDING_REVIEW / REJECTED`，教师可复核与申诉闭环。
+
+### 4) 数据分层与权威源
+
+- D1 是业务权威源（Teacher/Classroom/Student/CheckinTask/CheckinSubmission/FaceEmbedding 等）。
+- R2 负责文件对象（头像、签到人脸附件），数据库仅保存对象 key/URI。
+- 推理服务无业务状态，仅返回向量，不直接落业务库。
+
+### 5) 模型与推理配置管理
+
+- Worker 从 `FaceInferenceService` 表读取当前激活配置（`baseUrl/apiToken/timeoutMs/modelVer`）。
+- 支持 API 查询与更新推理配置：`GET/PUT /api/face/inference/config`。
+- 健康检查与模型枚举：`GET /api/face/model/status`，用于后台联调和运维排障。
+
+### 6) 与论文“系统总体设计”对应建议
+
+- 架构层：说明“客户端-无服务器业务层-推理服务层-数据存储层”四层拆分。
+- 数据流层：说明“任务发布 -> 提交 -> 自动判定 -> 人工复核 -> 统计分析”闭环。
+- 可扩展层：强调推理服务可替换模型版本，业务层通过配置中心无感切换。
+
+---
+
 ## 📄 License
 
 MIT License.
