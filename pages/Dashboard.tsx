@@ -87,6 +87,23 @@ const buildExcelXml = (
 </Workbook>`;
 };
 
+const triggerBlobDownload = (blob: Blob, filename: string): void => {
+  const nav = window.navigator as Navigator & { msSaveOrOpenBlob?: (b: Blob, name?: string) => boolean };
+  if (typeof nav.msSaveOrOpenBlob === 'function') {
+    nav.msSaveOrOpenBlob(blob, filename);
+    return;
+  }
+  const tempUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = tempUrl;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.setTimeout(() => URL.revokeObjectURL(tempUrl), 1500);
+};
+
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,6 +112,7 @@ const Dashboard: React.FC = () => {
   const [exporting, setExporting] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string>('');
   const [downloadFilename, setDownloadFilename] = useState<string>('');
+  const [downloadXml, setDownloadXml] = useState<string>('');
 
   const [showChart, setShowChart] = useState(false);
 
@@ -168,12 +186,23 @@ const Dashboard: React.FC = () => {
       const filename = `学生签到报表_${report.range}_${stamp}.xls`;
       setDownloadUrl(url);
       setDownloadFilename(filename);
-      toast.success('导出文件已生成，可点击临时链接下载');
+      setDownloadXml(xml);
+      triggerBlobDownload(blob, filename);
+      toast.success('导出文件已生成，已自动开始下载');
     } catch (error: any) {
       toast.error(error?.message || '导出失败');
     } finally {
       setExporting(false);
     }
+  };
+
+  const handleFallbackDownload = () => {
+    if (!downloadXml || !downloadFilename) {
+      toast.error('暂无可下载文件，请先导出');
+      return;
+    }
+    const blob = new Blob([downloadXml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    triggerBlobDownload(blob, downloadFilename);
   };
 
   if (loading) {
@@ -233,6 +262,12 @@ const Dashboard: React.FC = () => {
           >
             点击下载临时链接
           </a>
+          <button
+            onClick={handleFallbackDownload}
+            className="ml-3 rounded border border-emerald-300 bg-white px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-100"
+          >
+            备用下载
+          </button>
         </div>
       )}
 
