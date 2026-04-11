@@ -10,99 +10,13 @@ import {
 } from 'recharts';
 import { motion, Variants } from 'framer-motion';
 import { Users, UserCheck, Clock, UserX, RefreshCw, Download } from 'lucide-react';
-import { fetchCheckinExportReport, fetchDashboardStats, syncDataWithCloudflare } from '../services/dataService';
+import { buildCheckinExportDownloadUrl, fetchCheckinExportReport, fetchDashboardStats, syncDataWithCloudflare } from '../services/dataService';
 import { DashboardStats } from '../types';
 import ErrorBoundary from '../components/ErrorBoundary';
 import ClientOnly from '../components/ClientOnly';
 import toast from 'react-hot-toast';
 
 type StatsRange = 'day' | 'month' | 'year' | 'all';
-
-const escapeXml = (value: string): string =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-
-const buildExcelXml = (
-  rows: Array<{
-    className: string;
-    studentSid: string;
-    studentName: string;
-    rangeLabel: string;
-    totalTasks: number;
-    approvedCount: number;
-    pendingCount: number;
-    rejectedCount: number;
-    notSubmittedCount: number;
-  }>
-): string => {
-  const header = [
-    '序号',
-    '班级',
-    '学号',
-    '姓名',
-    '统计范围',
-    '签到任务总数',
-    '已通过',
-    '待审核',
-    '未通过',
-    '未提交',
-    '出勤率(%)'
-  ];
-  const rowXml = rows.map((row, index) => {
-    const attendanceRate = row.totalTasks > 0
-      ? Number(((row.approvedCount / row.totalTasks) * 100).toFixed(2))
-      : 0;
-    const cells = [
-      String(index + 1),
-      row.className,
-      row.studentSid,
-      row.studentName,
-      row.rangeLabel,
-      String(row.totalTasks),
-      String(row.approvedCount),
-      String(row.pendingCount),
-      String(row.rejectedCount),
-      String(row.notSubmittedCount),
-      String(attendanceRate),
-    ];
-    return `<Row>${cells.map((cell) => `<Cell><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`).join('')}</Row>`;
-  }).join('');
-  const headerXml = `<Row>${header.map((h) => `<Cell><Data ss:Type="String">${escapeXml(h)}</Data></Cell>`).join('')}</Row>`;
-  return `<?xml version="1.0"?>
-<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:o="urn:schemas-microsoft-com:office:office"
- xmlns:x="urn:schemas-microsoft-com:office:excel"
- xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
- xmlns:html="http://www.w3.org/TR/REC-html40">
- <Worksheet ss:Name="签到报表">
-  <Table>
-   ${headerXml}
-   ${rowXml}
-  </Table>
- </Worksheet>
-</Workbook>`;
-};
-
-const triggerBlobDownload = (blob: Blob, filename: string): void => {
-  const nav = window.navigator as Navigator & { msSaveOrOpenBlob?: (b: Blob, name?: string) => boolean };
-  if (typeof nav.msSaveOrOpenBlob === 'function') {
-    nav.msSaveOrOpenBlob(blob, filename);
-    return;
-  }
-  const tempUrl = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = tempUrl;
-  a.download = filename;
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  window.setTimeout(() => URL.revokeObjectURL(tempUrl), 1500);
-};
 
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -112,7 +26,6 @@ const Dashboard: React.FC = () => {
   const [exporting, setExporting] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string>('');
   const [downloadFilename, setDownloadFilename] = useState<string>('');
-  const [downloadXml, setDownloadXml] = useState<string>('');
 
   const [showChart, setShowChart] = useState(false);
 
@@ -147,14 +60,6 @@ const Dashboard: React.FC = () => {
     };
   }, [statsRange]);
 
-  useEffect(() => {
-    return () => {
-      if (downloadUrl) {
-        URL.revokeObjectURL(downloadUrl);
-      }
-    };
-  }, [downloadUrl]);
-
   const handleSync = async () => {
     setSyncing(true);
     try {
@@ -176,18 +81,12 @@ const Dashboard: React.FC = () => {
         toast.error('当前范围没有可导出的签到数据');
         return;
       }
-      if (downloadUrl) {
-        URL.revokeObjectURL(downloadUrl);
-      }
-      const xml = buildExcelXml(report.rows);
-      const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
+      const url = buildCheckinExportDownloadUrl(statsRange);
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `学生签到报表_${report.range}_${stamp}.xls`;
       setDownloadUrl(url);
       setDownloadFilename(filename);
-      setDownloadXml(xml);
-      triggerBlobDownload(blob, filename);
+      window.open(url, '_blank', 'noopener,noreferrer');
       toast.success('导出文件已生成，已自动开始下载');
     } catch (error: any) {
       toast.error(error?.message || '导出失败');
@@ -197,12 +96,11 @@ const Dashboard: React.FC = () => {
   };
 
   const handleFallbackDownload = () => {
-    if (!downloadXml || !downloadFilename) {
+    if (!downloadUrl || !downloadFilename) {
       toast.error('暂无可下载文件，请先导出');
       return;
     }
-    const blob = new Blob([downloadXml], { type: 'application/vnd.ms-excel;charset=utf-8' });
-    triggerBlobDownload(blob, downloadFilename);
+    window.open(downloadUrl, '_blank', 'noopener,noreferrer');
   };
 
   if (loading) {

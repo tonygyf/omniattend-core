@@ -335,6 +335,11 @@ export const fetchCheckinExportReport = async (range: DashboardStatsRange): Prom
   }
 };
 
+export const buildCheckinExportDownloadUrl = (range: DashboardStatsRange): string => {
+  const ts = Date.now();
+  return `${API_BASE_URL}/api/reports/checkin-export-file?range=${encodeURIComponent(range)}&apiKey=${encodeURIComponent(API_KEY)}&ts=${ts}`;
+};
+
 export const fetchUsers = async (teacherId?: string | number): Promise<User[]> => {
   if (USE_MOCK || isDemoAccount()) {
     await delay();
