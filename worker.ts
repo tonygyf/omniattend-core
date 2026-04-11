@@ -802,6 +802,84 @@ export default {
           }
         }
 
+        // 1.1 GET /api/reports/checkin-export - Export check-in report rows for current range
+        if (path === "/api/reports/checkin-export" && method === "GET") {
+          try {
+            const rangeParam = (url.searchParams.get("range") || "day").toLowerCase();
+            const statsRange: "day" | "month" | "year" | "all" =
+              rangeParam === "month" || rangeParam === "year" || rangeParam === "all" ? (rangeParam as any) : "day";
+            const rangeLabel = statsRange === "day" ? "日" : statsRange === "month" ? "月" : statsRange === "year" ? "年" : "总";
+            const normalizedTaskStartAtExpr = `
+              CASE
+                WHEN typeof(startAt) = 'integer' THEN datetime(
+                  CASE
+                    WHEN startAt > 1000000000000 THEN startAt / 1000
+                    ELSE startAt
+                  END,
+                  'unixepoch',
+                  'localtime'
+                )
+                WHEN trim(startAt) GLOB '[0-9]*' AND trim(startAt) NOT GLOB '*[^0-9]*' THEN datetime(
+                  CASE
+                    WHEN CAST(startAt AS INTEGER) > 1000000000000 THEN CAST(startAt AS INTEGER) / 1000
+                    ELSE CAST(startAt AS INTEGER)
+                  END,
+                  'unixepoch',
+                  'localtime'
+                )
+                ELSE datetime(startAt, 'localtime')
+              END
+            `;
+            const scopedTaskFilter =
+              statsRange === "month"
+                ? `strftime('%Y-%m', ${normalizedTaskStartAtExpr.replace(/startAt/g, "t.startAt")}) = strftime('%Y-%m', 'now', 'localtime')`
+                : statsRange === "year"
+                  ? `strftime('%Y', ${normalizedTaskStartAtExpr.replace(/startAt/g, "t.startAt")}) = strftime('%Y', 'now', 'localtime')`
+                  : statsRange === "all"
+                    ? "1=1"
+                    : `date(${normalizedTaskStartAtExpr.replace(/startAt/g, "t.startAt")}) = date('now', 'localtime')`;
+            const { results } = await env.DB.prepare(
+              `SELECT
+                 s.id AS studentId,
+                 s.name AS studentName,
+                 COALESCE(s.sid, '') AS studentSid,
+                 COALESCE(c.name, '未分班') AS className,
+                 COUNT(t.id) AS totalTasks,
+                 SUM(CASE WHEN sub.finalResult = 'APPROVED' THEN 1 ELSE 0 END) AS approvedCount,
+                 SUM(CASE WHEN sub.finalResult = 'PENDING_REVIEW' THEN 1 ELSE 0 END) AS pendingCount,
+                 SUM(CASE WHEN sub.finalResult = 'REJECTED' THEN 1 ELSE 0 END) AS rejectedCount,
+                 SUM(CASE WHEN t.id IS NOT NULL AND sub.id IS NULL THEN 1 ELSE 0 END) AS notSubmittedCount
+               FROM Student s
+               LEFT JOIN Classroom c ON c.id = s.classId
+               LEFT JOIN CheckinTask t ON t.classId = s.classId AND ${scopedTaskFilter}
+               LEFT JOIN CheckinSubmission sub ON sub.taskId = t.id AND sub.studentId = s.id AND sub.isLatest = 1
+               GROUP BY s.id, s.name, s.sid, c.name
+               ORDER BY c.name ASC, s.sid ASC, s.name ASC`
+            ).all<any>();
+
+            const rows = (results || []).map((row: any) => ({
+              studentId: Number(row.studentId || 0),
+              studentName: String(row.studentName || ""),
+              studentSid: String(row.studentSid || ""),
+              className: String(row.className || "未分班"),
+              rangeLabel,
+              totalTasks: Number(row.totalTasks || 0),
+              approvedCount: Number(row.approvedCount || 0),
+              pendingCount: Number(row.pendingCount || 0),
+              rejectedCount: Number(row.rejectedCount || 0),
+              notSubmittedCount: Number(row.notSubmittedCount || 0)
+            }));
+
+            return Response.json({
+              range: statsRange,
+              exportedAt: new Date().toISOString(),
+              rows
+            }, { headers: corsHeaders });
+          } catch (e: any) {
+            return Response.json({ error: e?.message || "导出报表失败" }, { status: 500, headers: corsHeaders });
+          }
+        }
+
         // 3. POST /api/profile/avatar - 上传头像并更新教师avatarUri
         if (path === "/api/profile/avatar" && method === "POST") {
           try {

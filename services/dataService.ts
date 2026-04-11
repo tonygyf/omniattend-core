@@ -269,6 +269,72 @@ export const fetchDashboardStats = async (range: 'day' | 'month' | 'year' | 'all
   }
 };
 
+export type DashboardStatsRange = 'day' | 'month' | 'year' | 'all';
+
+export interface CheckinExportRow {
+  studentId: number;
+  studentName: string;
+  studentSid: string;
+  className: string;
+  rangeLabel: string;
+  totalTasks: number;
+  approvedCount: number;
+  pendingCount: number;
+  rejectedCount: number;
+  notSubmittedCount: number;
+}
+
+export interface CheckinExportResponse {
+  range: DashboardStatsRange;
+  exportedAt: string;
+  rows: CheckinExportRow[];
+}
+
+export const fetchCheckinExportReport = async (range: DashboardStatsRange): Promise<CheckinExportResponse> => {
+  if (USE_MOCK || isDemoAccount()) {
+    await delay(400);
+    const rangeLabelMap: Record<DashboardStatsRange, string> = {
+      day: '日',
+      month: '月',
+      year: '年',
+      all: '总',
+    };
+    return {
+      range,
+      exportedAt: new Date().toISOString(),
+      rows: [
+        {
+          studentId: 1,
+          studentName: 'Tony Stark',
+          studentSid: '20230101',
+          className: '软件工程 2023级 1班',
+          rangeLabel: rangeLabelMap[range],
+          totalTasks: 8,
+          approvedCount: 6,
+          pendingCount: 1,
+          rejectedCount: 0,
+          notSubmittedCount: 1,
+        },
+      ],
+    };
+  }
+  try {
+    const payload = await safeFetchJSON<any>(`${API_BASE_URL}/api/reports/checkin-export?range=${range}`);
+    return {
+      range: (payload?.range || range) as DashboardStatsRange,
+      exportedAt: String(payload?.exportedAt || new Date().toISOString()),
+      rows: Array.isArray(payload?.rows) ? payload.rows : [],
+    };
+  } catch (e) {
+    console.warn('Export report API failed', e);
+    return {
+      range,
+      exportedAt: new Date().toISOString(),
+      rows: [],
+    };
+  }
+};
+
 export const fetchUsers = async (teacherId?: string | number): Promise<User[]> => {
   if (USE_MOCK || isDemoAccount()) {
     await delay();

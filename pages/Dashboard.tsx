@@ -9,8 +9,8 @@ import {
   ResponsiveContainer 
 } from 'recharts';
 import { motion, Variants } from 'framer-motion';
-import { Users, UserCheck, Clock, UserX, RefreshCw } from 'lucide-react';
-import { fetchDashboardStats, syncDataWithCloudflare } from '../services/dataService';
+import { Users, UserCheck, Clock, UserX, RefreshCw, Download } from 'lucide-react';
+import { fetchCheckinExportReport, fetchDashboardStats, syncDataWithCloudflare } from '../services/dataService';
 import { DashboardStats } from '../types';
 import ErrorBoundary from '../components/ErrorBoundary';
 import ClientOnly from '../components/ClientOnly';
@@ -18,11 +18,83 @@ import toast from 'react-hot-toast';
 
 type StatsRange = 'day' | 'month' | 'year' | 'all';
 
+const escapeXml = (value: string): string =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+const buildExcelXml = (
+  rows: Array<{
+    className: string;
+    studentSid: string;
+    studentName: string;
+    rangeLabel: string;
+    totalTasks: number;
+    approvedCount: number;
+    pendingCount: number;
+    rejectedCount: number;
+    notSubmittedCount: number;
+  }>
+): string => {
+  const header = [
+    '序号',
+    '班级',
+    '学号',
+    '姓名',
+    '统计范围',
+    '签到任务总数',
+    '已通过',
+    '待审核',
+    '未通过',
+    '未提交',
+    '出勤率(%)'
+  ];
+  const rowXml = rows.map((row, index) => {
+    const attendanceRate = row.totalTasks > 0
+      ? Number(((row.approvedCount / row.totalTasks) * 100).toFixed(2))
+      : 0;
+    const cells = [
+      String(index + 1),
+      row.className,
+      row.studentSid,
+      row.studentName,
+      row.rangeLabel,
+      String(row.totalTasks),
+      String(row.approvedCount),
+      String(row.pendingCount),
+      String(row.rejectedCount),
+      String(row.notSubmittedCount),
+      String(attendanceRate),
+    ];
+    return `<Row>${cells.map((cell) => `<Cell><Data ss:Type="String">${escapeXml(cell)}</Data></Cell>`).join('')}</Row>`;
+  }).join('');
+  const headerXml = `<Row>${header.map((h) => `<Cell><Data ss:Type="String">${escapeXml(h)}</Data></Cell>`).join('')}</Row>`;
+  return `<?xml version="1.0"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:html="http://www.w3.org/TR/REC-html40">
+ <Worksheet ss:Name="签到报表">
+  <Table>
+   ${headerXml}
+   ${rowXml}
+  </Table>
+ </Worksheet>
+</Workbook>`;
+};
+
 const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [statsRange, setStatsRange] = useState<StatsRange>(() => (localStorage.getItem('dashboard_stats_range') as StatsRange) || 'day');
+  const [exporting, setExporting] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string>('');
+  const [downloadFilename, setDownloadFilename] = useState<string>('');
 
   const [showChart, setShowChart] = useState(false);
 
@@ -57,6 +129,14 @@ const Dashboard: React.FC = () => {
     };
   }, [statsRange]);
 
+  useEffect(() => {
+    return () => {
+      if (downloadUrl) {
+        URL.revokeObjectURL(downloadUrl);
+      }
+    };
+  }, [downloadUrl]);
+
   const handleSync = async () => {
     setSyncing(true);
     try {
@@ -69,6 +149,32 @@ const Dashboard: React.FC = () => {
       setSyncing(false);
     }
   }
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const report = await fetchCheckinExportReport(statsRange);
+      if (!report.rows.length) {
+        toast.error('当前范围没有可导出的签到数据');
+        return;
+      }
+      if (downloadUrl) {
+        URL.revokeObjectURL(downloadUrl);
+      }
+      const xml = buildExcelXml(report.rows);
+      const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const filename = `学生签到报表_${report.range}_${stamp}.xls`;
+      setDownloadUrl(url);
+      setDownloadFilename(filename);
+      toast.success('导出文件已生成，可点击临时链接下载');
+    } catch (error: any) {
+      toast.error(error?.message || '导出失败');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (loading) {
     return <div className="flex h-full items-center justify-center text-slate-500">正在加载仪表盘...</div>;
@@ -99,6 +205,14 @@ const Dashboard: React.FC = () => {
             <button onClick={() => setStatsRange('year')} className={`px-3 py-1 rounded-md text-sm font-medium ${statsRange === 'year' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>年</button>
             <button onClick={() => setStatsRange('all')} className={`px-3 py-1 rounded-md text-sm font-medium ${statsRange === 'all' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>总</button>
           </div>
+          <button
+              onClick={handleExport}
+              disabled={exporting}
+              className={`flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-emerald-600 transition-colors shadow-sm ${exporting ? 'opacity-70' : ''}`}
+          >
+            <Download size={16} className={`${exporting ? 'animate-pulse' : ''}`} />
+            {exporting ? '正在导出...' : '导出Excel'}
+          </button>
           <button 
               onClick={handleSync}
               disabled={syncing}
@@ -109,6 +223,18 @@ const Dashboard: React.FC = () => {
           </button>
         </div>
       </div>
+      {downloadUrl && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          导出文件已就绪：
+          <a
+            href={downloadUrl}
+            download={downloadFilename}
+            className="ml-1 underline decoration-emerald-500 underline-offset-2 hover:text-emerald-900"
+          >
+            点击下载临时链接
+          </a>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <motion.div 
